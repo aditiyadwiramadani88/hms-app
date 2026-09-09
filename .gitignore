@@ -1,0 +1,33 @@
+/vendor/
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Laravel 4 specific
+bootstrap/compiled.php
+app/storage/
+
+# Laravel 5 & modern
+public/storage
+public/hot
+public/build
+storage/*.key
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/testing/*
+storage/framework/views/*
+storage/logs/*
+
+.env
+.env.backup
+.env.production
+Homestead.yaml
+Homestead.json
+/.vagrant
+.phpunit.result.cache
+
+# MacOS
+.DS_Store
+.aider*
+
+testsprite_tests/tmp/config.json

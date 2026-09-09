@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # PHP Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: simpang-homestay-app
+    container_name: hms-app
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: app
+      SERVICE_TAGS: dev
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+      - /var/www/vendor
+      - ./storage:/var/www/storage
+    networks:
+      - hms-network
+
+  # Nginx Service
+  webserver:
+    image: nginx:alpine
+    container_name: hms-webserver
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./:/var/www
+      - ./docker-config/nginx:/etc/nginx/conf.d
+    networks:
+      - hms-network
+    depends_on:
+      - app
+
+  # Database Service
+  db:
+    image: postgres:15-alpine
+    container_name: hms-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-fekusa}
+      POSTGRES_USER: ${DB_USERNAME:-fekusa}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-putri123}
+    ports:
+      - "54321:5432"
+    volumes:
+      - hms-db-data:/var/lib/postgresql/data
+    networks:
+      - hms-network
+
+  # pgAdmin Service
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: hms-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "8081:80"
+    networks:
+      - hms-network
+    depends_on:
+      - db
+
+networks:
+  hms-network:
+    driver: bridge
+
+volumes:
+  hms-db-data:
+    driver: local

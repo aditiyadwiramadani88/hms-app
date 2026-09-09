@@ -1,0 +1,135 @@
+/* Status Colors */
+:root {
+    --status-clean: #10b981;
+    --status-dirty: #ef4444;
+    --status-cleaning: #f59e0b;
+    --status-occupied: #3b82f6;
+    --status-maintenance: #f97316;
+    --status-out-of-order: #6b7280;
+    
+    --bg-card: #ffffff;
+    --bg-hover: #f3f4f6;
+    --bg-selected: #dbeafe;
+}
+
+/* Status Cards */
+.hk-status-card {
+    border-radius: 0.5rem;
+    transition: all 0.2s ease;
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+}
+
+.hk-status-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.hk-status-card.status-clean { border-top: 4px solid var(--status-clean); }
+.hk-status-card.status-dirty { border-top: 4px solid var(--status-dirty); }
+.hk-status-card.status-cleaning { border-top: 4px solid var(--status-cleaning); }
+.hk-status-card.status-occupied { border-top: 4px solid var(--status-occupied); }
+.hk-status-card.status-maintenance { border-top: 4px solid var(--status-maintenance); }
+.hk-status-card.status-out-of-order { border-top: 4px solid var(--status-out-of-order); }
+
+.hk-status-icon {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.hk-status-count {
+    font-size: 1.75rem;
+    font-weight: bold;
+    line-height: 1;
+}
+
+/* Priority Lists */
+.hk-priority-card {
+    border-radius: 0.5rem;
+    border: 1px solid #e5e7eb;
+    height: 100%;
+}
+
+.hk-priority-header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #e5e7eb;
+    font-weight: 600;
+    border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.hk-priority-item {
+    padding: 1rem;
+    border-bottom: 1px solid #e5e7eb;
+    transition: background-color 0.2s ease;
+}
+
+.hk-priority-item:hover {
+    background-color: var(--bg-hover);
+}
+
+.hk-priority-item:last-child {
+    border-bottom: none;
+}
+
+/* Room Grid */
+.hk-room-grid-card {
+    border-radius: 0.5rem;
+    border: 2px solid #e5e7eb;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.hk-room-grid-card:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.hk-room-grid-card.border-clean { border-color: var(--status-clean); }
+.hk-room-grid-card.border-dirty { border-color: var(--status-dirty); }
+.hk-room-grid-card.border-cleaning { border-color: var(--status-cleaning); }
+.hk-room-grid-card.border-occupied { border-color: var(--status-occupied); }
+.hk-room-grid-card.border-maintenance { border-color: var(--status-maintenance); }
+.hk-room-grid-card.border-out-of-order { border-color: var(--status-out-of-order); }
+
+.hk-floor-divider {
+    margin: 2rem 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #f3f4f6;
+    font-weight: bold;
+    color: #4b5563;
+}
+
+/* Modal Styling */
+.hk-radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.hk-radio-label {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.hk-radio-label:hover {
+    background-color: var(--bg-hover);
+}
+
+.hk-radio-input:checked + .hk-radio-label {
+    background-color: var(--bg-selected);
+    border-color: var(--action-primary);
+}
+
+.hk-ob-workload {
+    font-size: 0.8rem;
+    color: #6b7280;
+}
