@@ -26,15 +26,18 @@ class RoomTransferController extends Controller
         $request->validate([
             "room_id" => "required|exists:rooms,id",
             "tier" => "required|in:public,sales,high_season",
+            "new_check_out" => "nullable|date",
         ]);
 
         $newRoom = Room::findOrFail($request->room_id);
+        $newCheckOut = $request->filled('new_check_out') ? Carbon::parse($request->new_check_out) : null;
 
         try {
             $preview = $this->transferService->previewTransfer(
                 $booking,
                 $newRoom,
                 $request->tier,
+                $newCheckOut,
             );
             return response()->json(["success" => true, "data" => $preview]);
         } catch (\Exception $e) {

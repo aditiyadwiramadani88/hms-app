@@ -17,7 +17,7 @@ storage/framework/sessions/*
 storage/framework/testing/*
 storage/framework/views/*
 storage/logs/*
-
+env production
 .env
 .env.backup
 .env.production
@@ -31,3 +31,19 @@ Homestead.json
 .aider*
 
 testsprite_tests/tmp/config.json
+package-copy-config.json
+package-lock.json
+database/migrations/2026_05_09_213938_create_asset_categories_table.php
+database/migrations/2026_05_09_213939_create_assets_table.php
+database/migrations/2026_05_09_213940_create_asset_histories_table.php
+database/migrations/2026_05_10_000000_create_final_cash_mutations_table.php
+docs/README.md
+docs/implementations/setup_and_workflow.md
+database/migrations/2026_05_09_213938_create_asset_categories_table.php
+package-lock.json
+yarn.lock
+database/migrations/2026_05_09_213939_create_assets_table.php
+database/migrations/2026_05_09_213940_create_asset_histories_table.php
+database/migrations/2026_05_10_000000_create_final_cash_mutations_table.php
+package-lock.json
+yarn.lock

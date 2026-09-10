@@ -63,6 +63,7 @@ class PurchaseController extends Controller
             }
 
             $purchase = Purchase::create([
+                'hotel_id' => active_hotel_id() ?: 1,
                 'supplier_id' => $validated['supplier_id'],
                 'user_id' => Auth::id(),
                 'purchase_date' => $validated['purchase_date'],
@@ -107,7 +108,10 @@ class PurchaseController extends Controller
 
             DB::commit();
 
-            return $this->ajaxOrRedirect('Purchase order created successfully.', route('purchases.index'), $purchase, 201);
+            return $this->ajaxOrRedirect('Purchase order created successfully.', route('purchases.index'), [
+                'purchase' => $purchase,
+                'redirect' => route('purchases.index'),
+            ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -280,17 +284,24 @@ class PurchaseController extends Controller
     public function searchInventory(Request $request)
     {
         $term = $request->input('term', '');
+        $hotelId = active_hotel_id() ?: 1;
 
-        $items = Inventory::where('hotel_id', active_hotel_id())
-            ->where('is_active', true)
-            ->where('name', 'like', "%{$term}%")
-            ->limit(20)
+        $items = Inventory::where('is_active', true)
+            ->where(function ($q) use ($hotelId) {
+                $q->where('hotel_id', $hotelId)->orWhereNull('hotel_id');
+            })
+            ->when($term, function ($q, $term) {
+                $q->where('name', 'like', "%{$term}%");
+            })
+            ->orderBy('name')
+            ->limit(30)
             ->get()
             ->map(function ($item) {
+                $price = (float) ($item->purchase_price > 0 ? $item->purchase_price : ($item->price_per_unit ?? 0));
                 return [
                     'id' => $item->id,
-                    'text' => $item->name . ' (' . $item->unit . ')',
-                    'price' => $item->price_per_unit,
+                    'text' => $item->name . ' (' . ($item->unit ?? 'Unit') . ')',
+                    'price' => $price,
                 ];
             });
 

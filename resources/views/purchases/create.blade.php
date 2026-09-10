@@ -16,7 +16,7 @@
         @endslot
     @endcomponent
 
-    <form action="{{ route('purchases.store') }}" method="POST" data-ajax="true">
+    <form action="{{ route('purchases.store') }}" method="POST" data-ajax="true" data-ajax-redirect="{{ route('purchases.index') }}" id="createPurchaseForm">
         @csrf
         <div class="row">
             <!-- Left Column -->
@@ -158,15 +158,16 @@
             let itemCounter = 0;
 
             $('#item_search').select2({
-                placeholder: 'Type to search for an item...',
-                minimumInputLength: 1,
+                placeholder: 'Cari atau pilih item inventaris...',
+                allowClear: true,
+                minimumInputLength: 0,
                 ajax: {
                     url: "{{ route('api.inventory.search') }}",
                     dataType: 'json',
                     delay: 250,
                     data: function(params) {
                         return {
-                            term: params.term,
+                            term: params.term || '',
                             _token: "{{ csrf_token() }}",
                         };
                     },
@@ -186,15 +187,17 @@
             function addItem(id, name, price) {
                 // Prevent adding the same item twice
                 if ($(`#item-row-${id}`).length > 0) {
-                    alert('Item already added.');
+                    alert('Item sudah ditambahkan ke daftar.');
                     return;
                 }
+
+                const numericPrice = parseFloat(price) || 0;
 
                 const newRow = `
                     <tr id="item-row-${id}">
                         <td>
                             <input type="hidden" name="items[${itemCounter}][inventory_id]" value="${id}">
-                            ${name}
+                            <span class="fw-medium">${name}</span>
                         </td>
                         <td>
                             <input type="number" class="form-control item-quantity" name="items[${itemCounter}][quantity]" value="1" min="1" step="1">
@@ -202,11 +205,11 @@
                         <td>
                              <div class="input-group">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control item-price" name="items[${itemCounter}][price]" value="${price}" min="0" step="100">
+                                <input type="number" class="form-control item-price" name="items[${itemCounter}][price]" value="${numericPrice}" min="0" step="100">
                              </div>
                         </td>
-                        <td class="text-end item-subtotal">
-                            ${formatRupiah(price)}
+                        <td class="text-end item-subtotal fw-semibold">
+                            ${formatRupiah(numericPrice)}
                         </td>
                         <td class="text-end">
                             <button type="button" class="btn btn-sm btn-danger remove-item">
@@ -225,19 +228,19 @@
                 updateTotal();
             });
 
-            $(document).on('input', '.item-quantity, .item-price', function() {
-                const row = $(this).closest('tr');
-                const quantity = parseFloat(row.find('.item-quantity').val()) || 0;
-                const price = parseFloat(row.find('.item-price').val()) || 0;
-                const subtotal = quantity * price;
-                row.find('.item-subtotal').text(formatRupiah(subtotal));
+            $(document).on('input change', '.item-quantity, .item-price', function() {
                 updateTotal();
             });
 
             function updateTotal() {
                 let total = 0;
-                $('.item-subtotal').each(function() {
-                    total += parseRupiah($(this).text());
+                $('#items-list tr').each(function() {
+                    const row = $(this);
+                    const quantity = parseFloat(row.find('.item-quantity').val()) || 0;
+                    const price = parseFloat(row.find('.item-price').val()) || 0;
+                    const subtotal = quantity * price;
+                    row.find('.item-subtotal').text(formatRupiah(subtotal));
+                    total += subtotal;
                 });
                 $('#total-amount').text(formatRupiah(total));
             }
@@ -246,9 +249,15 @@
                 return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
             }
 
-            function parseRupiah(rupiahString) {
-                return parseFloat(rupiahString.replace(/[^0-9,-]+/g,"").replace(",", ".")) || 0;
-            }
+            // Validate that items exist before submit
+            $('#createPurchaseForm').on('submit', function(e) {
+                if ($('#items-list tr').length === 0) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    alert('Silakan tambahkan minimal 1 item produk/inventaris sebelum menyimpan Purchase Order.');
+                    return false;
+                }
+            });
         });
     </script>
 @endsection
