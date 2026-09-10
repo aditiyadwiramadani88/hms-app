@@ -127,3 +127,16 @@ Ketika Anda siap menerapkan perubahan ini ke server *production*, lakukan langka
 4. **Catatan Penting**:
    - **TIDAK PERLU** menjalankan `php artisan migrate:fresh` atau perintah database destruktif apapun.
    - Data riwayat tamu, booking lama, transaksi, dan inventaris di server *production* akan tetap aman 100% dan tidak mengalami perubahan struktur.
+
+---
+
+### F. Front Office: Pindah Kamar ke Kamar yang Belum Dibersihkan (Dirty/Checkout Room Transfer)
+- **Masalah**:
+  - Saat tamu ingin pindah kamar (Room Transfer), kamar tujuan yang baru saja checkout (status `Checkout`, `dirty`, `Dirty`, `Room Refresh`) tetap muncul di daftar pilihan dan bisa dipilih, padahal kamar tersebut belum dibersihkan oleh Housekeeping.
+  - Di `RoomTransferService::transfer()`, validasi status kamar tujuan hanya memblokir status `In-House`, `Occupied`, `Maintenance`, `Out of Order`, `Closed` — tetapi **tidak** memblokir kamar kotor.
+- **Solusi**:
+  - **Backend** (`app/Services/RoomTransferService.php`): Menambahkan validasi tambahan yang menolak transfer ke kamar dengan status `dirty`, `Dirty`, `Checkout`, dan `Room Refresh`. Pesan error menyebutkan nomor kamar dan status, serta mengarahkan staff ke Housekeeping.
+  - **Frontend** (`resources/views/bookings/show.blade.php`): Modal Room Transfer kini hanya menampilkan kamar yang `available === true` dari API response (yang sudah memfilter kamar kotor). Jika tidak ada kamar bersih, ditampilkan pesan informatif. Setiap kartu kamar juga menampilkan badge status kebersihan.
+- **File Diubah**:
+  - `app/Services/RoomTransferService.php`
+  - `resources/views/bookings/show.blade.php`
