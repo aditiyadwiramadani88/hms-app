@@ -104,6 +104,11 @@ class RoomTransferService
             throw new \Exception('Kamar tujuan tidak tersedia atau sedang ditempati.');
         }
 
+        // Block transfer to dirty/unclean rooms — housekeeping must clean first
+        if (in_array($newRoom->status, ['dirty', 'Dirty', 'Checkout', 'Room Refresh'])) {
+            throw new \Exception('Kamar ' . $newRoom->room_number . ' belum dibersihkan (status: ' . $newRoom->status . '). Minta Housekeeping untuk membersihkan kamar terlebih dahulu sebelum pindah kamar.');
+        }
+
         if ($newRoom->id === $booking->room_id) {
             throw new \Exception('Kamar tujuan harus berbeda dari kamar saat ini.');
         }

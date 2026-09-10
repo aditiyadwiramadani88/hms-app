@@ -2248,16 +2248,19 @@
             fetch(`{{ route('bookings.available-rooms') }}?${params.toString()}`).then(r => r.json()).then(rooms => {
                 const container = document.getElementById('transfer_room_list');
                 container.innerHTML = '';
-                rooms.forEach(room => {
-                    if (room.id === {{ $booking->room_id ?? 0 }}) return; // Skip current room
+                // Only show rooms that are clean/available for immediate transfer (not dirty/checkout)
+                const transferableRooms = rooms.filter(room => room.id !== {{ $booking->room_id ?? 0 }} && room.available === true);
+                transferableRooms.forEach(room => {
+                    const statusBadge = room.status ? `<span class="badge bg-success-subtle text-success mb-1">${room.status}</span>` : '';
                     const col = document.createElement('div');
                     col.className = 'col-md-3';
                     col.innerHTML = `
                         <div class="card border shadow-none h-100">
                             <div class="card-body p-3">
                                 <h6 class="fs-14 mb-1">Room ${room.room_number}</h6>
-                                <span class="badge bg-primary-subtle text-primary mb-2">${room.room_type}</span>
-                                <div class="d-grid gap-1">
+                                <span class="badge bg-primary-subtle text-primary mb-1">${room.room_type}</span>
+                                ${statusBadge}
+                                <div class="d-grid gap-1 mt-1">
                                     <button type="button" class="btn btn-sm btn-soft-primary" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_public}, 'public')">
                                         Umum: ${formatRp(room.price_public)}
                                     </button>
@@ -2272,8 +2275,8 @@
                         </div>`;
                     container.appendChild(col);
                 });
-                if (rooms.filter(r => r.id !== {{ $booking->room_id ?? 0 }}).length === 0) {
-                    container.innerHTML = '<div class="col-12 text-center text-muted py-3">Tidak ada kamar tersedia.</div>';
+                if (transferableRooms.length === 0) {
+                    container.innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="ri-information-line fs-20 d-block mb-1"></i>Tidak ada kamar bersih yang tersedia untuk pindah kamar. Pastikan kamar tujuan sudah di-clean oleh Housekeeping.</div>';
                 }
             });
         }
