@@ -2449,6 +2449,17 @@ class BookingController extends Controller
         $room = $booking->room;
         $roomType = $room?->roomType;
 
+        // Check if there is an upcoming booking on this room
+        $nextBooking = Booking::where("room_id", $booking->room_id)
+            ->where("id", "!=", $booking->id)
+            ->whereNotIn("status", ["cancelled", "no_show", "checked_out"])
+            ->whereDate("check_in", ">=", $booking->check_out)
+            ->orderBy("check_in", "asc")
+            ->first();
+
+        $maxNewCheckOut = $nextBooking ? $nextBooking->check_in->format("Y-m-d") : null;
+        $isBlocked = $nextBooking && $nextBooking->check_in->toDateString() === $booking->check_out->toDateString();
+
         if ($booking->stay_type === "monthly") {
             $pricePerMonth = $roomType
                 ? $this->pricingService->calculateMonthlyPrice(
@@ -2465,6 +2476,9 @@ class BookingController extends Controller
                     "room",
                     "roomType",
                     "minNewCheckOut",
+                    "maxNewCheckOut",
+                    "isBlocked",
+                    "nextBooking",
                     "pricePerMonth",
                 ),
             );
@@ -2481,6 +2495,9 @@ class BookingController extends Controller
                     "room",
                     "roomType",
                     "minNewCheckOut",
+                    "maxNewCheckOut",
+                    "isBlocked",
+                    "nextBooking",
                     "pricePerNight",
                 ),
             );
@@ -2524,6 +2541,25 @@ class BookingController extends Controller
                 $msg = "Room type tidak ditemukan.";
                 if ($this->isAjaxRequest()) return $this->ajaxError($msg);
                 return back()->with("error", $msg);
+            }
+
+            // Check if there is an overlapping booking on the same room
+            $conflictBooking = Booking::where("room_id", $booking->room_id)
+                ->where("id", "!=", $booking->id)
+                ->whereNotIn("status", ["cancelled", "no_show", "checked_out"])
+                ->where(function ($q) use ($currentCheckOut, $newCheckOut) {
+                    $q->whereDate("check_in", "<", $newCheckOut)
+                      ->whereDate("check_out", ">", $currentCheckOut);
+                })
+                ->first();
+
+            if ($conflictBooking) {
+                $roomNumber = $room?->room_number ?? $booking->room_id;
+                $conflictGuest = $conflictBooking->guest?->name ?? 'Tamu';
+                $conflictDates = $conflictBooking->check_in->format('d/m/Y') . ' s/d ' . $conflictBooking->check_out->format('d/m/Y');
+                $msg = "Kamar {$roomNumber} tidak dapat diperpanjang ke tanggal tersebut karena sudah ada reservasi lain (#{$conflictBooking->id} - {$conflictGuest} pada {$conflictDates}). Silakan gunakan fitur Pindah Kamar (Room Transfer).";
+                if ($this->isAjaxRequest()) return $this->ajaxError($msg);
+                return back()->with("error", $msg)->withInput();
             }
 
             $additionalCost = 0;

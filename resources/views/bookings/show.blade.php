@@ -2278,12 +2278,19 @@
             });
         }
 
+        let currentSelectedTransferRoom = null;
         function selectTransferRoom(roomId, roomNum, roomType, price, tier) {
+            currentSelectedTransferRoom = { roomId, roomNum, roomType, price, tier };
             document.getElementById('transfer_room_id').value = roomId;
             document.getElementById('transfer_tier').value = tier;
 
             // Fetch preview
             const params = new URLSearchParams({ room_id: roomId, tier: tier });
+            const newCheckOut = document.getElementById('transfer_new_checkout').value;
+            if (newCheckOut) {
+                params.append('new_check_out', newCheckOut);
+            }
+
             fetch(`{{ route('bookings.transfer.preview', $booking->id) }}?${params.toString()}`).then(r => r.json()).then(res => {
                 if (!res.success) {
                     alert(res.message);
@@ -2310,7 +2317,7 @@
                     diffEl.textContent = '+' + formatRp(d.price_difference);
                     diffEl.className = 'fw-bold text-danger';
                     chargeOption.style.display = 'block';
-                    chargeDesc.textContent = 'Kamar baru lebih mahal. Pilih tindakan untuk selisih harga:';
+                    chargeDesc.textContent = 'Kamar baru / durasi perpanjangan memiliki total lebih tinggi. Pilih tindakan:';
                     chargeAmount.textContent = '(' + formatRp(d.price_difference) + ')';
                 } else if (d.price_difference < 0) {
                     diffEl.textContent = '-' + formatRp(Math.abs(d.price_difference));
@@ -2326,6 +2333,18 @@
                 document.getElementById('btnConfirmTransfer').disabled = false;
             });
         }
+
+        document.getElementById('transfer_new_checkout').addEventListener('change', function() {
+            if (currentSelectedTransferRoom) {
+                selectTransferRoom(
+                    currentSelectedTransferRoom.roomId,
+                    currentSelectedTransferRoom.roomNum,
+                    currentSelectedTransferRoom.roomType,
+                    currentSelectedTransferRoom.price,
+                    currentSelectedTransferRoom.tier
+                );
+            }
+        });
 
         // Load rooms when modal opens
         document.getElementById('roomTransferModal').addEventListener('show.bs.modal', function() {

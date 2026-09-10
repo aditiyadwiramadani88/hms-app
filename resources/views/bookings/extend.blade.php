@@ -88,17 +88,43 @@
                         </div>
                     @endif
 
+                    @if(!empty($isBlocked) && $isBlocked)
+                        <div class="alert alert-danger">
+                            <i class="ri-error-warning-line me-2"></i>
+                            <strong>Kamar Tidak Dapat Diperpanjang:</strong> Kamar ini sudah dipesan oleh reservasi lain (#{{ $nextBooking->id }} - {{ $nextBooking->guest?->name ?? 'Tamu' }}) mulai tanggal <strong>{{ $booking->check_out->format('d M Y') }}</strong>.
+                            <div class="mt-2">
+                                <a href="{{ route('bookings.show', $booking->id) }}" class="btn btn-sm btn-primary">
+                                    <i class="ri-arrow-left-line me-1"></i> Buka Booking & Pindah Kamar
+                                </a>
+                            </div>
+                        </div>
+                    @elseif(!empty($maxNewCheckOut))
+                        <div class="alert alert-warning">
+                            <i class="ri-information-line me-2"></i>
+                            <strong>Batas Maksimal:</strong> Kamar ini memiliki reservasi tamu lain (#{{ $nextBooking->id }}) mulai tanggal <strong>{{ \Carbon\Carbon::parse($maxNewCheckOut)->format('d M Y') }}</strong>. Perpanjangan maksimal sampai tanggal tersebut.
+                        </div>
+                    @endif
+
                     <form action="{{ route('bookings.extend.process', $booking->id) }}" method="POST" data-ajax="true">
                         @csrf
 
                         <div class="mb-3">
                             <label for="new_check_out" class="form-label">Perpanjang Sampai</label>
-                            <input type="date" class="form-control" id="new_check_out" name="new_check_out" min="{{ $minNewCheckOut }}" required>
-                            <div class="form-text">Pilih tanggal check-out baru</div>
+                            <input type="date" class="form-control" id="new_check_out" name="new_check_out" 
+                                   min="{{ $minNewCheckOut }}" 
+                                   @if(!empty($maxNewCheckOut)) max="{{ $maxNewCheckOut }}" @endif 
+                                   {{ !empty($isBlocked) && $isBlocked ? 'disabled' : 'required' }}>
+                            <div class="form-text">
+                                @if(!empty($maxNewCheckOut))
+                                    Maksimal s/d {{ \Carbon\Carbon::parse($maxNewCheckOut)->format('d M Y') }}
+                                @else
+                                    Pilih tanggal check-out baru
+                                @endif
+                            </div>
                         </div>
 
                         <div class="d-flex gap-2">
-                            <button type="submit" data-submit-protect="true" class="btn btn-primary">
+                            <button type="submit" data-submit-protect="true" class="btn btn-primary" {{ !empty($isBlocked) && $isBlocked ? 'disabled' : '' }}>
                                 <i class="ri-check-line me-1"></i> Simpan Perpanjangan
                             </button>
                             <a href="{{ route('bookings.show', $booking->id) }}" class="btn btn-secondary">

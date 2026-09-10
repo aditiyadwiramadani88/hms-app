@@ -742,16 +742,13 @@ class BookingService
         $newCheckInDT = $this->combineDateAndTime($checkIn, $checkInTime, '14:00');
         $newCheckOutDT = $this->combineDateAndTime($checkOut, $checkOutTime, '12:00');
 
-        $availableStatuses = ['Available', 'available', 'Clean', 'clean'];
-        // Allow In-House rooms for future bookings (precise overlap check below handles conflicts)
-        if ($checkIn->startOfDay()->gt(Carbon::today())) {
-            $availableStatuses[] = 'In-House';
-            $availableStatuses[] = 'Checkin';
-        }
+        // Rooms that are physically out of service/maintenance cannot be booked.
+        // Rooms that are Checkout, Dirty, Clean, or In-House are allowed because booking schedule conflict check below handles date availability.
+        $unavailableStatuses = ['Maintenance', 'maintenance', 'Out of Order', 'out_of_order', 'Closed', 'closed'];
 
         $query = Room::query()
-            ->when(!$includeUnavailable, function ($q) use ($availableStatuses) {
-                return $q->whereIn('status', $availableStatuses);
+            ->when(!$includeUnavailable, function ($q) use ($unavailableStatuses) {
+                return $q->whereNotIn('status', $unavailableStatuses);
             })
             ->when($stayType === 'monthly', function ($q) {
                 return $q->where('is_kos', true);
