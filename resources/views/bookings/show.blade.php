@@ -2248,8 +2248,11 @@
             fetch(`{{ route('bookings.available-rooms') }}?${params.toString()}`).then(r => r.json()).then(rooms => {
                 const container = document.getElementById('transfer_room_list');
                 container.innerHTML = '';
-                // Only show rooms that are clean/available for immediate transfer (not dirty/checkout)
-                const transferableRooms = rooms.filter(room => room.id !== {{ $booking->room_id ?? 0 }} && room.available === true);
+                // Only show rooms that are physically ready for immediate transfer:
+                // - available === true (not dirty/checkout/maintenance)
+                // - NOT currently occupied (In-House/Checkin/Occupied are physically blocked for transfers)
+                const blockedStatuses = ['In-House', 'Checkin', 'Occupied'];
+                const transferableRooms = rooms.filter(room => room.id !== {{ $booking->room_id ?? 0 }} && room.available === true && !blockedStatuses.includes(room.status));
                 transferableRooms.forEach(room => {
                     const statusBadge = room.status ? `<span class="badge bg-success-subtle text-success mb-1">${room.status}</span>` : '';
                     const col = document.createElement('div');
