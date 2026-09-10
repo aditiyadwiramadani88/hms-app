@@ -215,4 +215,22 @@ return [
     "profit_realized_desc" => "Profit dari pendapatan yang sudah sah",
     "room_revenue" => "Pendapatan Kamar",
     "pos_revenue" => "Pendapatan POS",
+
+    // Room Transfer Status Labels
+    "room_status_occupied" => "Terisi",
+    "room_status_dirty" => "Kotor",
+    "room_status_checkout" => "Checkout",
+    "room_status_refresh" => "Perlu Refresh",
+    "room_status_maintenance" => "Perbaikan",
+    "room_status_out_of_order" => "Rusak",
+    "room_status_closed" => "Ditutup",
+    "room_status_available" => "Tersedia",
+    "room_status_clean" => "Bersih",
+    "room_status_booked" => "Sudah Dipesan",
+    "room_block_occupied" => "Sedang ditempati tamu",
+    "room_block_dirty" => "Belum dibersihkan",
+    "room_block_maintenance" => "Dalam perbaikan",
+    "room_block_booked" => "Ada reservasi lain",
+    "room_label" => "Kamar",
+    "no_rooms_found" => "Tidak ada kamar ditemukan untuk tipe ini.",
 ];

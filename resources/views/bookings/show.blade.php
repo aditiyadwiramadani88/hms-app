@@ -2253,13 +2253,32 @@
                 const dirtyStatuses = ['dirty', 'Dirty', 'Checkout', 'Room Refresh'];
                 const maintenanceStatuses = ['Maintenance', 'maintenance', 'Out of Order', 'out_of_order', 'Closed', 'closed'];
 
-                // Terjemahan status agar tampilan konsisten Bahasa Indonesia
+                // Label status mengikuti pengaturan bahasa aktif user (EN/ID)
+                const t = @json([
+                    'occupied' => __('translation.room_status_occupied'),
+                    'dirty' => __('translation.room_status_dirty'),
+                    'checkout' => __('translation.room_status_checkout'),
+                    'refresh' => __('translation.room_status_refresh'),
+                    'maintenance' => __('translation.room_status_maintenance'),
+                    'out_of_order' => __('translation.room_status_out_of_order'),
+                    'closed' => __('translation.room_status_closed'),
+                    'available' => __('translation.room_status_available'),
+                    'clean' => __('translation.room_status_clean'),
+                    'booked' => __('translation.room_status_booked'),
+                    'block_occupied' => __('translation.room_block_occupied'),
+                    'block_dirty' => __('translation.room_block_dirty'),
+                    'block_maintenance' => __('translation.room_block_maintenance'),
+                    'block_booked' => __('translation.room_block_booked'),
+                    'room_label' => __('translation.room_label'),
+                    'no_rooms' => __('translation.no_rooms_found'),
+                ]);
+
                 const statusLabel = {
-                    'In-House': 'Terisi', 'Checkin': 'Terisi', 'Occupied': 'Terisi',
-                    'dirty': 'Kotor', 'Dirty': 'Kotor', 'Checkout': 'Checkout', 'Room Refresh': 'Perlu Refresh',
-                    'Maintenance': 'Perbaikan', 'maintenance': 'Perbaikan', 'Out of Order': 'Rusak',
-                    'out_of_order': 'Rusak', 'Closed': 'Ditutup', 'closed': 'Ditutup',
-                    'Available': 'Tersedia', 'available': 'Tersedia', 'Clean': 'Bersih', 'clean': 'Bersih'
+                    'In-House': t.occupied, 'Checkin': t.occupied, 'Occupied': t.occupied,
+                    'dirty': t.dirty, 'Dirty': t.dirty, 'Checkout': t.checkout, 'Room Refresh': t.refresh,
+                    'Maintenance': t.maintenance, 'maintenance': t.maintenance, 'Out of Order': t.out_of_order,
+                    'out_of_order': t.out_of_order, 'Closed': t.closed, 'closed': t.closed,
+                    'Available': t.available, 'available': t.available, 'Clean': t.clean, 'clean': t.clean
                 };
 
                 const filteredRooms = rooms.filter(room => room.id !== {{ $booking->room_id ?? 0 }});
@@ -2270,23 +2289,23 @@
                     const hasConflict = !room.available && !isOccupied && !isDirty && !isMaintenance;
                     const canTransfer = room.available === true && !isOccupied && !isDirty && !isMaintenance;
 
-                    const label = statusLabel[room.status] || room.status || 'Tersedia';
+                    const label = statusLabel[room.status] || room.status || t.available;
 
                     // Tentukan badge status dan alasan blokir
                     let statusBadge = '';
                     let blockReason = '';
                     if (isOccupied) {
                         statusBadge = `<span class="badge bg-danger mb-1">${label}</span>`;
-                        blockReason = `<small class="text-danger d-block mt-1"><i class="ri-forbid-line"></i> Sedang ditempati tamu</small>`;
+                        blockReason = `<small class="text-danger d-block mt-1"><i class="ri-forbid-line"></i> ${t.block_occupied}</small>`;
                     } else if (isDirty) {
                         statusBadge = `<span class="badge bg-warning text-dark mb-1">${label}</span>`;
-                        blockReason = `<small class="text-warning d-block mt-1"><i class="ri-brush-line"></i> Belum dibersihkan</small>`;
+                        blockReason = `<small class="text-warning d-block mt-1"><i class="ri-brush-line"></i> ${t.block_dirty}</small>`;
                     } else if (isMaintenance) {
                         statusBadge = `<span class="badge bg-dark mb-1">${label}</span>`;
-                        blockReason = `<small class="text-muted d-block mt-1"><i class="ri-tools-line"></i> Dalam perbaikan</small>`;
+                        blockReason = `<small class="text-muted d-block mt-1"><i class="ri-tools-line"></i> ${t.block_maintenance}</small>`;
                     } else if (hasConflict) {
-                        statusBadge = `<span class="badge bg-info mb-1">Sudah Dipesan</span>`;
-                        blockReason = `<small class="text-info d-block mt-1"><i class="ri-calendar-event-line"></i> Ada reservasi lain</small>`;
+                        statusBadge = `<span class="badge bg-info mb-1">${t.booked}</span>`;
+                        blockReason = `<small class="text-info d-block mt-1"><i class="ri-calendar-event-line"></i> ${t.block_booked}</small>`;
                     } else {
                         statusBadge = `<span class="badge bg-success mb-1">${label}</span>`;
                     }
@@ -2298,7 +2317,7 @@
                     col.innerHTML = `
                         <div class="card border shadow-none h-100 ${cardOpacity}">
                             <div class="card-body p-3">
-                                <h6 class="fs-14 mb-1">Kamar ${room.room_number}</h6>
+                                <h6 class="fs-14 mb-1">${t.room_label} ${room.room_number}</h6>
                                 <span class="badge bg-primary-subtle text-primary mb-1">${room.room_type}</span>
                                 ${statusBadge}
                                 ${canTransfer ? `<div class="d-grid gap-1 mt-1">
@@ -2317,7 +2336,7 @@
                     container.appendChild(col);
                 });
                 if (filteredRooms.length === 0) {
-                    container.innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="ri-home-line fs-20 d-block mb-1"></i>Tidak ada kamar ditemukan untuk tipe ini.</div>';
+                    container.innerHTML = `<div class="col-12 text-center text-muted py-3"><i class="ri-home-line fs-20 d-block mb-1"></i>${t.no_rooms}</div>`;
                 }
             });
         }
