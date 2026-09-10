@@ -2254,24 +2254,27 @@
                 const maintenanceStatuses = ['Maintenance', 'maintenance', 'Out of Order', 'out_of_order', 'Closed', 'closed'];
 
                 // Label status mengikuti pengaturan bahasa aktif user (EN/ID)
-                const t = @json([
-                    'occupied' => __('translation.room_status_occupied'),
-                    'dirty' => __('translation.room_status_dirty'),
-                    'checkout' => __('translation.room_status_checkout'),
-                    'refresh' => __('translation.room_status_refresh'),
-                    'maintenance' => __('translation.room_status_maintenance'),
-                    'out_of_order' => __('translation.room_status_out_of_order'),
-                    'closed' => __('translation.room_status_closed'),
-                    'available' => __('translation.room_status_available'),
-                    'clean' => __('translation.room_status_clean'),
-                    'booked' => __('translation.room_status_booked'),
-                    'block_occupied' => __('translation.room_block_occupied'),
-                    'block_dirty' => __('translation.room_block_dirty'),
-                    'block_maintenance' => __('translation.room_block_maintenance'),
-                    'block_booked' => __('translation.room_block_booked'),
-                    'room_label' => __('translation.room_label'),
-                    'no_rooms' => __('translation.no_rooms_found'),
-                ]);
+                @php
+                    $roomTransferLabels = [
+                        'occupied' => __('translation.room_status_occupied'),
+                        'dirty' => __('translation.room_status_dirty'),
+                        'checkout' => __('translation.room_status_checkout'),
+                        'refresh' => __('translation.room_status_refresh'),
+                        'maintenance' => __('translation.room_status_maintenance'),
+                        'out_of_order' => __('translation.room_status_out_of_order'),
+                        'closed' => __('translation.room_status_closed'),
+                        'available' => __('translation.room_status_available'),
+                        'clean' => __('translation.room_status_clean'),
+                        'booked' => __('translation.room_status_booked'),
+                        'block_occupied' => __('translation.room_block_occupied'),
+                        'block_dirty' => __('translation.room_block_dirty'),
+                        'block_maintenance' => __('translation.room_block_maintenance'),
+                        'block_booked' => __('translation.room_block_booked'),
+                        'room_label' => __('translation.room_label'),
+                        'no_rooms' => __('translation.no_rooms_found'),
+                    ];
+                @endphp
+                const t = @json($roomTransferLabels);
 
                 const statusLabel = {
                     'In-House': t.occupied, 'Checkin': t.occupied, 'Occupied': t.occupied,
