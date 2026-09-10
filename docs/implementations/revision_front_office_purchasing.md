@@ -130,13 +130,38 @@ Ketika Anda siap menerapkan perubahan ini ke server *production*, lakukan langka
 
 ---
 
-### F. Front Office: Pindah Kamar ke Kamar yang Belum Dibersihkan (Dirty/Checkout Room Transfer)
+### F. Front Office: Pindah Kamar — Validasi Kebersihan, Tampilan Status, dan Dukungan Bahasa (i18n)
+
+#### F.1 Validasi Kamar Kotor / Belum Dibersihkan
 - **Masalah**:
-  - Saat tamu ingin pindah kamar (Room Transfer), kamar tujuan yang baru saja checkout (status `Checkout`, `dirty`, `Dirty`, `Room Refresh`) tetap muncul di daftar pilihan dan bisa dipilih, padahal kamar tersebut belum dibersihkan oleh Housekeeping.
+  - Saat tamu ingin pindah kamar (Room Transfer), kamar tujuan yang baru saja checkout (status `Checkout`, `dirty`, `Dirty`, `Room Refresh`) maupun yang sedang ditempati (`In-House`, `Occupied`) tetap muncul di daftar pilihan dan bisa dipilih.
   - Di `RoomTransferService::transfer()`, validasi status kamar tujuan hanya memblokir status `In-House`, `Occupied`, `Maintenance`, `Out of Order`, `Closed` — tetapi **tidak** memblokir kamar kotor.
 - **Solusi**:
   - **Backend** (`app/Services/RoomTransferService.php`): Menambahkan validasi tambahan yang menolak transfer ke kamar dengan status `dirty`, `Dirty`, `Checkout`, dan `Room Refresh`. Pesan error menyebutkan nomor kamar dan status, serta mengarahkan staff ke Housekeeping.
-  - **Frontend** (`resources/views/bookings/show.blade.php`): Modal Room Transfer kini hanya menampilkan kamar yang `available === true` dari API response (yang sudah memfilter kamar kotor). Jika tidak ada kamar bersih, ditampilkan pesan informatif. Setiap kartu kamar juga menampilkan badge status kebersihan.
 - **File Diubah**:
   - `app/Services/RoomTransferService.php`
+
+#### F.2 Tampilan Semua Kamar dengan Badge Status
+- **Masalah**: Jika kamar yang tidak tersedia disembunyikan, staff tidak tahu kenapa kamar tertentu tidak muncul (apakah kotor, ditempati, atau maintenance).
+- **Solusi**:
+  - **Frontend** (`resources/views/bookings/show.blade.php`): Modal Room Transfer kini menampilkan **semua kamar** dengan indikator visual yang jelas:
+    - ✅ Kamar tersedia: badge **hijau** + tombol harga aktif (bisa diklik)
+    - 🔴 Kamar terisi (`In-House`/`Occupied`): badge **merah** + keterangan + redup 50% (tidak bisa diklik)
+    - 🟡 Kamar kotor (`Dirty`/`Checkout`): badge **kuning** + keterangan + redup 50%
+    - ⚫ Kamar perbaikan (`Maintenance`/`Out of Order`): badge **hitam** + keterangan + redup 50%
+    - 🔵 Kamar sudah dipesan (jadwal bentrok): badge **biru** + keterangan + redup 50%
+- **File Diubah**:
+  - `resources/views/bookings/show.blade.php`
+
+#### F.3 Dukungan Bahasa (i18n) — English & Indonesia
+- **Masalah**: Label status pada modal pindah kamar di-*hardcode* dalam satu bahasa, tidak mengikuti pengaturan bahasa aktif user di aplikasi (yang mendukung English dan Indonesia).
+- **Solusi**:
+  - Menambahkan **18 key terjemahan** baru ke file translation:
+    - `resources/lang/en/translation.php` — label dalam Bahasa Inggris
+    - `resources/lang/id/translation.php` — label dalam Bahasa Indonesia
+  - Key yang ditambahkan meliputi: `room_status_occupied`, `room_status_dirty`, `room_status_clean`, `room_status_available`, `room_status_booked`, `room_block_occupied`, `room_block_dirty`, `room_block_maintenance`, `room_block_booked`, `room_label`, `no_rooms_found`, dll.
+  - Di `show.blade.php`, terjemahan di-load melalui `@php` block + `@json()` sehingga JavaScript bisa membaca label sesuai bahasa aktif user secara otomatis.
+- **File Diubah**:
+  - `resources/lang/en/translation.php`
+  - `resources/lang/id/translation.php`
   - `resources/views/bookings/show.blade.php`
