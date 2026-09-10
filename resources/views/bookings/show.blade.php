@@ -2248,22 +2248,53 @@
             fetch(`{{ route('bookings.available-rooms') }}?${params.toString()}`).then(r => r.json()).then(rooms => {
                 const container = document.getElementById('transfer_room_list');
                 container.innerHTML = '';
-                // Only show rooms that are physically ready for immediate transfer:
-                // - available === true (not dirty/checkout/maintenance)
-                // - NOT currently occupied (In-House/Checkin/Occupied are physically blocked for transfers)
-                const blockedStatuses = ['In-House', 'Checkin', 'Occupied'];
-                const transferableRooms = rooms.filter(room => room.id !== {{ $booking->room_id ?? 0 }} && room.available === true && !blockedStatuses.includes(room.status));
-                transferableRooms.forEach(room => {
-                    const statusBadge = room.status ? `<span class="badge bg-success-subtle text-success mb-1">${room.status}</span>` : '';
+                // Status categories for room transfer eligibility
+                const occupiedStatuses = ['In-House', 'Checkin', 'Occupied'];
+                const dirtyStatuses = ['dirty', 'Dirty', 'Checkout', 'Room Refresh'];
+                const maintenanceStatuses = ['Maintenance', 'maintenance', 'Out of Order', 'out_of_order', 'Closed', 'closed'];
+
+                const filteredRooms = rooms.filter(room => room.id !== {{ $booking->room_id ?? 0 }});
+                filteredRooms.forEach(room => {
+                    const isOccupied = occupiedStatuses.includes(room.status);
+                    const isDirty = dirtyStatuses.includes(room.status);
+                    const isMaintenance = maintenanceStatuses.includes(room.status);
+                    const hasConflict = !room.available && !isOccupied && !isDirty && !isMaintenance;
+                    const canTransfer = room.available === true && !isOccupied && !isDirty && !isMaintenance;
+
+                    // Determine status badge color and reason
+                    let statusBadge = '';
+                    let blockReason = '';
+                    if (isOccupied) {
+                        statusBadge = `<span class="badge bg-danger mb-1">${room.status}</span>`;
+                        blockReason = `<small class="text-danger d-block mt-1"><i class="ri-forbid-line"></i> Sedang ditempati</small>`;
+                    } else if (isDirty) {
+                        statusBadge = `<span class="badge bg-warning text-dark mb-1">${room.status}</span>`;
+                        blockReason = `<small class="text-warning d-block mt-1"><i class="ri-brush-line"></i> Belum dibersihkan</small>`;
+                    } else if (isMaintenance) {
+                        statusBadge = `<span class="badge bg-dark mb-1">${room.status}</span>`;
+                        blockReason = `<small class="text-muted d-block mt-1"><i class="ri-tools-line"></i> Dalam perbaikan</small>`;
+                    } else if (hasConflict) {
+                        statusBadge = `<span class="badge bg-info mb-1">Booked</span>`;
+                        blockReason = `<small class="text-info d-block mt-1"><i class="ri-calendar-event-line"></i> Ada reservasi</small>`;
+                    } else {
+                        statusBadge = `<span class="badge bg-success mb-1">${room.status || 'Available'}</span>`;
+                    }
+
+                    const cardOpacity = canTransfer ? '' : 'opacity-50';
+                    const btnDisabled = canTransfer ? '' : 'disabled';
+                    const btnOnclick = canTransfer
+                        ? `onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', {public}, '{tier}')"`
+                        : '';
+
                     const col = document.createElement('div');
                     col.className = 'col-md-3';
                     col.innerHTML = `
-                        <div class="card border shadow-none h-100">
+                        <div class="card border shadow-none h-100 ${cardOpacity}">
                             <div class="card-body p-3">
                                 <h6 class="fs-14 mb-1">Room ${room.room_number}</h6>
                                 <span class="badge bg-primary-subtle text-primary mb-1">${room.room_type}</span>
                                 ${statusBadge}
-                                <div class="d-grid gap-1 mt-1">
+                                ${canTransfer ? `<div class="d-grid gap-1 mt-1">
                                     <button type="button" class="btn btn-sm btn-soft-primary" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_public}, 'public')">
                                         Umum: ${formatRp(room.price_public)}
                                     </button>
@@ -2273,13 +2304,13 @@
                                     <button type="button" class="btn btn-sm btn-soft-danger" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_high_season}, 'high_season')">
                                         High Season: ${formatRp(room.price_high_season)}
                                     </button>
-                                </div>
+                                </div>` : blockReason}
                             </div>
                         </div>`;
                     container.appendChild(col);
                 });
-                if (transferableRooms.length === 0) {
-                    container.innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="ri-information-line fs-20 d-block mb-1"></i>Tidak ada kamar bersih yang tersedia untuk pindah kamar. Pastikan kamar tujuan sudah di-clean oleh Housekeeping.</div>';
+                if (filteredRooms.length === 0) {
+                    container.innerHTML = '<div class="col-12 text-center text-muted py-3"><i class="ri-home-line fs-20 d-block mb-1"></i>Tidak ada kamar ditemukan untuk tipe ini.</div>';
                 }
             });
         }
