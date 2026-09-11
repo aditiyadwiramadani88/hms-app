@@ -5,12 +5,142 @@
 @section('css')
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/main.min.css">
     <style>
-        .fc-event { cursor: pointer; padding: 2px 5px; }
+        .fc-event { cursor: pointer; padding: 2px 5px; font-size: 0.78rem; border-radius: 4px; }
         .fc-toolbar-title { font-size: 1.2rem !important; font-weight: bold; }
         .room-available-item { border-left: 3px solid #0ab39c; transition: all 0.3s; }
         .room-available-item:hover { background-color: #f3f6f9; transform: translateX(5px); }
         .badge-room { font-size: 12px; width: 45px; text-align: center; }
         .fc-event-inhouse { background-color: #7c3aed !important; border-color: #7c3aed !important; color: white !important; }
+
+        /* Badge +X more styling */
+        .fc-more-link {
+            font-weight: 600 !important;
+            color: #405189 !important;
+            font-size: 0.72rem !important;
+            padding: 1px 5px !important;
+            background: rgba(64, 81, 137, 0.12) !important;
+            border-radius: 4px !important;
+            display: inline-block !important;
+            margin-top: 1px !important;
+            text-decoration: none !important;
+            transition: all 0.2s ease;
+        }
+        .fc-more-link:hover {
+            background: rgba(64, 81, 137, 0.25) !important;
+            color: #2b3964 !important;
+        }
+
+        /* Styling untuk Modal Daftar Booking (+more) */
+        #calendarMoreModal .modal-content {
+            border-radius: 12px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
+        }
+        #calendarMoreModal .fc-event {
+            transition: all 0.15s ease;
+        }
+        #calendarMoreModal .fc-event:hover {
+            opacity: 0.9;
+            transform: scale(1.01);
+        }
+
+        /* Nonaktifkan popover bawaan FullCalendar agar tidak tampil ganda dengan Bootstrap Modal */
+        .fc-popover {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            opacity: 0 !important;
+        }
+
+        /* Mobile specific adjustments (< 768px) */
+        @media (max-width: 767.98px) {
+            .calendar-card .card-body {
+                padding: 10px 4px !important;
+            }
+            .calendar-legend {
+                font-size: 0.72rem !important;
+                gap: 6px !important;
+            }
+            .calendar-legend .badge {
+                width: 10px !important;
+                height: 10px !important;
+            }
+
+            /* Responsive Toolbar: Row 1 = buttons, Row 2 = month title */
+            .fc .fc-toolbar {
+                display: flex !important;
+                flex-wrap: wrap !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                gap: 6px !important;
+                margin-bottom: 0.75rem !important;
+            }
+            .fc .fc-toolbar-chunk:nth-child(1) {
+                order: 1 !important;
+            }
+            .fc .fc-toolbar-chunk:nth-child(3) {
+                order: 2 !important;
+            }
+            .fc .fc-toolbar-chunk:nth-child(2) {
+                order: 3 !important;
+                width: 100% !important;
+                text-align: center !important;
+                margin-top: 4px !important;
+            }
+            .fc .fc-toolbar-title {
+                font-size: 1rem !important;
+                font-weight: 700 !important;
+            }
+            .fc .fc-button {
+                padding: 0.22rem 0.5rem !important;
+                font-size: 0.75rem !important;
+            }
+
+            /* Grid cells & events */
+            .fc-scrollgrid {
+                border-left: 0 !important;
+                border-right: 0 !important;
+                width: 100% !important;
+                table-layout: fixed !important;
+            }
+            .fc-col-header-cell-cushion {
+                font-size: 0.72rem !important;
+                padding: 4px 1px !important;
+                font-weight: 600 !important;
+            }
+            .fc-daygrid-day-frame {
+                min-height: 55px !important;
+                padding: 1px !important;
+            }
+            .fc-daygrid-day-top {
+                padding: 1px 2px !important;
+            }
+            .fc-daygrid-day-number {
+                font-size: 0.72rem !important;
+                font-weight: 600 !important;
+                padding: 1px 2px !important;
+            }
+            .fc-daygrid-event {
+                font-size: 0.65rem !important;
+                line-height: 1.15 !important;
+                padding: 1px 2px !important;
+                margin: 1px 0 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                border-radius: 2px !important;
+            }
+            .fc-daygrid-event .fc-event-title {
+                font-size: 0.65rem !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                white-space: nowrap !important;
+            }
+            .fc-more-link {
+                font-size: 0.65rem !important;
+                padding: 1px 4px !important;
+            }
+
+        }
     </style>
 @endsection
 @section('content')
@@ -131,7 +261,7 @@
     <div class="row">
         {{-- Left: The Main Calendar --}}
         <div class="col-xl-9">
-            <div class="card card-height-100">
+            <div class="card card-height-100 calendar-card">
                 <div class="card-header border-0">
                     <div class="d-flex align-items-center">
                         <h5 class="card-title flex-grow-1 mb-0"><i class="ri-calendar-todo-fill me-2 text-primary"></i>Room Occupancy Schedule</h5>
@@ -145,7 +275,7 @@
                     </div>
                 </div>
                 <div class="card-body">
-                    <div class="d-flex gap-3 mb-3 justify-content-center">
+                    <div class="d-flex flex-wrap gap-2 mb-3 justify-content-center calendar-legend">
                         <div class="d-flex align-items-center gap-1">
                             <span class="badge" style="width: 15px; height: 15px; background-color: #7c3aed;">&nbsp;</span>
                             <span class="fs-12">In-House (Checked-In)</span>
@@ -322,6 +452,23 @@
             </div>
         </div>
     </div>
+
+    {{-- Bootstrap 5 Modal untuk Daftar Booking Lengkap (+more) --}}
+    <div class="modal fade" id="calendarMoreModal" tabindex="-1" aria-labelledby="calendarMoreModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" style="max-width: 380px;">
+            <div class="modal-content border-0 shadow-lg" style="border-radius: 12px; overflow: hidden;">
+                <div class="modal-header bg-light py-2 px-3 border-bottom d-flex align-items-center justify-content-between">
+                    <h6 class="modal-title fw-bold fs-14 text-dark mb-0" id="calendarMoreModalTitle">
+                        <i class="ri-calendar-event-line me-1 text-primary"></i> Bookings
+                    </h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="padding: 0.5rem;"></button>
+                </div>
+                <div class="modal-body p-3" id="calendarMoreModalBody" style="max-height: 65vh; overflow-y: auto;">
+                    <!-- List booking dirender secara dinamis di sini -->
+                </div>
+            </div>
+        </div>
+    </div>
 @endsection
 
 @section('script')
@@ -329,13 +476,67 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const calendarEl = document.getElementById('calendar');
+            const isMobile = window.innerWidth < 768;
+
             const calendar = new FullCalendar.Calendar(calendarEl, {
                 initialView: 'dayGridMonth',
+                dayMaxEvents: isMobile ? 2 : 4, // Di mobile batasi 2 event per kotak tanggal, sisanya "+X more" modal
+                dayMaxEventRows: isMobile ? 3 : 5,
+                moreLinkClick: function(info) {
+                    if (info.jsEvent) {
+                        info.jsEvent.preventDefault();
+                        info.jsEvent.stopPropagation();
+                    }
+
+                    const modalEl = document.getElementById('calendarMoreModal');
+                    const modalTitle = document.getElementById('calendarMoreModalTitle');
+                    const modalBody = document.getElementById('calendarMoreModalBody');
+
+                    if (!modalEl || !modalTitle || !modalBody) return false;
+
+                    // Format tanggal judul modal: e.g. "September 10, 2026"
+                    const dateFormatted = info.date.toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric'
+                    });
+                    modalTitle.innerHTML = '<i class="ri-calendar-event-line me-1 text-primary"></i> ' + dateFormatted;
+
+                    // Render daftar booking dengan badge warna yang sesuai
+                    let html = '';
+                    const segs = info.allSegs || [];
+                    if (segs.length === 0) {
+                        html = '<p class="text-muted text-center py-3 mb-0 fs-12">No bookings on this day.</p>';
+                    } else {
+                        segs.forEach(function(seg) {
+                            const event = seg.event;
+                            const classes = (event.classNames || []).join(' ');
+                            const url = event.url || 'javascript:void(0);';
+                            html += '<a href="' + url + '" class="fc-daygrid-event fc-event d-block mb-2 p-2 rounded text-white text-decoration-none shadow-sm ' + classes + '">' +
+                                        '<div class="fc-event-title fw-semibold fs-12">' + event.title + '</div>' +
+                                    '</a>';
+                        });
+                    }
+                    modalBody.innerHTML = html;
+
+                    // Tampilkan Bootstrap 5 Modal resmi
+                    const modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+                    modalInstance.show();
+
+                    return false; // Mencegah popover bawaan FullCalendar yang bermasalah di mobile
+                },
                 headerToolbar: {
                     left: 'prev,next today',
                     center: 'title',
                     right: 'dayGridMonth,timeGridWeek,listMonth'
                 },
+                buttonText: {
+                    today: 'Today',
+                    dayGridMonth: 'Month',
+                    timeGridWeek: 'Week',
+                    listMonth: 'List'
+                },
+                dayHeaderFormat: { weekday: 'short' },
                 themeSystem: 'bootstrap5',
                 events: [
                     @foreach($bookings as $booking)
@@ -360,6 +561,9 @@
                         window.location.href = info.event.url;
                         info.jsEvent.preventDefault();
                     }
+                },
+                windowResize: function(arg) {
+                    calendar.updateSize();
                 }
             });
             calendar.render();
