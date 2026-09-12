@@ -94,12 +94,7 @@
                     <nav class="meedy_menu">
                         <ul class="nav_scroll">
                             <li><a href="{{ route('public.index') }}">Home</a></li>
-                            <li>
-                                <a href="#">Rooms <i class="fas fa-angle-down"></i></a>
-                                <ul class="sub-menu">
-                                    <li><a href="{{ route('public.rooms.index') }}">All Rooms</a></li>
-                                </ul>
-                            </li>
+                            <li><a href="{{ route('public.rooms.index') }}">Rooms</a></li>
                             <li><a href="{{ route('public.services') }}">Services</a></li>
                             <li><a href="{{ route('public.gallery') }}">Gallery</a></li>
                             <li><a href="{{ route('public.about') }}">About</a></li>
@@ -228,22 +223,23 @@
                                 <li><a href="{{ route('public.rooms.index') }}"> Rooms & Suites </a></li>
                                 <li><a href="{{ route('public.services') }}"> Our Services </a></li>
                                 <li><a href="{{ route('public.gallery') }}"> Gallery </a></li>
-                                <li><a href="{{ route('public.contact') }}"> Contact Us </a></li>
                             </ul>
                         </div>
                     </div>
                 </div>
                 <div class="col-lg-3 col-md-6">
                     <div class="widget widget-nav-menu">
-                        <h4 class="widget-title">Usefull Links</h4>
+                        <h4 class="widget-title">Useful Links</h4>
                         <div class="menu-quick-link-content">
                             <ul class="footer-menu">
-                                <li><a href="{{ route('public.rooms.index') }}"> Booking </a></li>
-                                <li><a href="{{ route('public.rooms.index') }}"> Rooms & Suites </a></li>
-                                <li><a href="{{ route('public.services') }}"> Services </a></li>
-                                <li><a href="{{ route('public.gallery') }}"> Gallery </a></li>
-                                <li><a href="{{ route('public.contact') }}"> Contact </a></li>
-                                <li><a href="{{ route('public.about') }}"> FAQ's </a></li>
+                                <li><a href="{{ route('public.index') }}"> Home </a></li>
+                                <li><a href="{{ route('public.booking.form') }}"> Booking </a></li>
+                                @auth('guest')
+                                    <li><a href="{{ route('guest.dashboard') }}"> My Account </a></li>
+                                @else
+                                    <li><a href="{{ route('guest.login') }}"> Guest Portal </a></li>
+                                @endauth
+                                <li><a href="{{ route('public.contact') }}"> Contact Us </a></li>
                             </ul>
                         </div>
                     </div>
