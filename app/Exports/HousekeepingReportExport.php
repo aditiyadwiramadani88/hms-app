@@ -73,12 +73,11 @@ class HousekeepingReportExport implements FromArray, WithHeadings, ShouldAutoSiz
             $rows[] = [
                 $i + 1,
                 $task->completed_at ? $task->completed_at->format('d/m/Y H:i') : '-',
-                $room ? $room->room_number : '-',
+                $room ? ('Kamar ' . $room->room_number . ($room->roomType ? ' (' . $room->roomType->name . ')' : '')) : '-',
                 $task->assignedUser ? $task->assignedUser->name : '-',
                 $source,
-                $room && $room->roomType ? $room->roomType->name : '-',
                 self::BONUS_CATEGORY_LABELS[$bonusCategoryKey] ?? 'Belum terklasifikasi',
-                ucfirst(str_replace('_', ' ', $task->status)),
+                'Selesai / Approved',
             ];
         }
         return $rows;
@@ -86,7 +85,7 @@ class HousekeepingReportExport implements FromArray, WithHeadings, ShouldAutoSiz
 
     public function headings(): array
     {
-        return ['No', 'Tanggal', 'Kamar', 'Staff', 'Sumber Booking', 'Kategori', 'Kategori Bonus', 'Status Verifikasi'];
+        return ['No', 'Tanggal', 'Kamar Yang Dikerjakan', 'Nama Staff', 'Sumber Booking', 'Kategori Bonus', 'Status Verifikasi'];
     }
 
     public function styles(Worksheet $sheet): array

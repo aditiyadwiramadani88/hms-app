@@ -22,19 +22,20 @@ class HousekeepingReportController extends Controller
             $hotelId = active_hotel_id();
             $month = $request->input('month', Carbon::now()->format('Y-m'));
             $staffId = $request->input('staff_id');
+            $date = $request->input('date');
+            $sortBy = $request->input('sort_by', 'date_desc');
 
-            // Optional single-day view (e.g. "Today Report" link from the HK dashboard)
-            // instead of the whole month.
+            // Support single-day view or full month view
             if ($request->filled('date')) {
-                $date = Carbon::parse($request->input('date'));
-                $periodStart = $date->copy()->startOfDay();
-                $periodEnd = $date->copy()->endOfDay();
+                $parsedDate = Carbon::parse($date);
+                $periodStart = $parsedDate->copy()->startOfDay();
+                $periodEnd = $parsedDate->copy()->endOfDay();
             } else {
                 $periodStart = Carbon::parse($month)->startOfMonth();
                 $periodEnd = Carbon::parse($month)->endOfMonth();
             }
 
-            $reportData = $this->buildReport($hotelId, $periodStart, $periodEnd, $staffId);
+            $reportData = $this->buildReport($hotelId, $periodStart, $periodEnd, $staffId, $sortBy);
 
             // Role names for housekeeping/OB staff vary per hotel (e.g. "Housekeeping
             // leader", "Housekeeping team") — use the is_housekeeping_staff flag
@@ -53,7 +54,7 @@ class HousekeepingReportController extends Controller
                 ->orderBy('name')
                 ->get(['id', 'name']);
 
-            return view('reports.housekeeping_report', compact('reportData', 'month', 'staffId', 'staffList'));
+            return view('reports.housekeeping_report', compact('reportData', 'month', 'date', 'sortBy', 'staffId', 'staffList'));
         } catch (\Exception $e) {
             if ($this->isAjaxRequest()) return $this->ajaxError($e->getMessage());
             return redirect()->back()->with('error', $e->getMessage());
@@ -103,15 +104,21 @@ class HousekeepingReportController extends Controller
         'kosong' => 'Kosong',
     ];
 
-    private function buildReport(int $hotelId, Carbon $monthStart, Carbon $monthEnd, ?int $staffId = null): array
+    private function buildReport(int $hotelId, Carbon $monthStart, Carbon $monthEnd, ?int $staffId = null, string $sortBy = 'date_desc'): array
     {
+        $orderDir = ($sortBy === 'date_asc') ? 'asc' : 'desc';
+
         $tasks = CleaningTask::where('hotel_id', $hotelId)
             ->where('status', CleaningTask::STATUS_SELESAI)
             ->whereBetween('completed_at', [$monthStart->startOfDay(), $monthEnd->endOfDay()])
             ->when($staffId, fn($q) => $q->where('assigned_to', $staffId))
             ->with(['room.roomType', 'assignedUser'])
-            ->orderBy('completed_at', 'desc')
+            ->orderBy('completed_at', $orderDir)
             ->get();
+
+        if ($sortBy === 'staff') {
+            $tasks = $tasks->sortBy(fn($t) => strtolower($t->assignedUser?->name ?? ''))->values();
+        }
 
         // Preload last checkout booking per room for booking source
         $roomIds = $tasks->pluck('room_id')->filter()->unique();
@@ -122,9 +129,7 @@ class HousekeepingReportController extends Controller
             ->get()
             ->keyBy('room_id');
 
-        // Bonus category (dasar bonus: pk/sales/umum/online/kos/kosong) is decided and stored
-        // on the WorkOrder created alongside each CleaningTask (see CleaningTask::boot()), but
-        // there's no FK -- link back via the "Task ID: X" marker WorkOrder::notes always has.
+        // Bonus category (dasar bonus: pk/sales/umum/online/kos/kosong)
         $workOrders = \App\Models\WorkOrder::where('hotel_id', $hotelId)
             ->where('type', 'cleaning')
             ->whereBetween('completed_at', [$monthStart->startOfDay(), $monthEnd->endOfDay()])
@@ -136,13 +141,19 @@ class HousekeepingReportController extends Controller
             }
         }
 
-        // Build detail rows + nested summary per staff (source, room type, bonus category)
+        // Build detail rows + nested summary per staff
         $details = [];
         $summary = [];
         foreach ($tasks as $task) {
             $room = $task->room;
             $booking = $lastBookings->get($task->room_id);
-            $source = $booking && $booking->bookingSource ? $booking->bookingSource->name : '-';
+            $rawSource = $booking && $booking->bookingSource ? $booking->bookingSource->name : ($booking->source ?? 'UMUM');
+            if (!$rawSource || in_array(strtolower(trim($rawSource)), ['walk_in', 'walk in', 'langsung / walk-in', ''])) {
+                $source = 'UMUM';
+            } else {
+                $source = strtoupper(trim($rawSource));
+            }
+
             $roomType = $room && $room->roomType ? $room->roomType->name : '-';
             $bonusCategoryKey = $bonusCategoryByTaskId[$task->id] ?? null;
             $bonusCategoryLabel = self::BONUS_CATEGORY_LABELS[$bonusCategoryKey] ?? 'Belum terklasifikasi';
@@ -150,12 +161,12 @@ class HousekeepingReportController extends Controller
 
             $details[] = [
                 'tanggal' => $task->completed_at ? $task->completed_at->format('d/m/Y H:i') : '-',
-                'kamar' => $room ? ($room->room_number . ($room->roomType ? ' (' . $roomType . ')' : '')) : '-',
+                'kamar' => $room ? ('Kamar ' . $room->room_number . ($roomType !== '-' ? ' (' . $roomType . ')' : '')) : '-',
                 'staff' => $staffName,
                 'sumber' => $source,
                 'kategori' => $roomType,
                 'kategori_bonus' => $bonusCategoryLabel,
-                'status_verifikasi' => ucfirst(str_replace('_', ' ', $task->status)),
+                'status_verifikasi' => 'Selesai / Approved',
             ];
 
             if (!isset($summary[$staffName])) {
@@ -177,10 +188,14 @@ class HousekeepingReportController extends Controller
                 'by_bonus_category' => $data['by_bonus_category'],
             ];
         }
-        usort($summaryRows, fn($a, $b) => $b['jumlah'] <=> $a['jumlah']);
+        $groupedByStaff = [];
+        foreach ($details as $d) {
+            $groupedByStaff[$d['staff']][] = $d;
+        }
 
         return [
             'details' => $details,
+            'grouped_by_staff' => $groupedByStaff,
             'summary' => $summaryRows,
             'total_tasks' => count($details),
         ];

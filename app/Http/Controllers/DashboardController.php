@@ -111,16 +111,32 @@ class DashboardController extends Controller
         // Room stats — using Room.status consistently (matching RoomService::getRoomStatuses)
         $dirtyRoomsCount = Room::whereIn('status', ['Checkout', 'dirty'])->count();
         $maintenanceCount = Room::whereIn('status', ['Out of Order', 'maintenance'])->count();
-        $inHouseRooms = Room::whereIn('status', ['In-House', 'Checkin'])->count();
         $availableRoomsCount = Room::where('status', 'Available')->count();
 
-        // In-House Rooms breakdown by booking source — derived from the same Room.status
-        // query as $inHouseRooms (not Booking.status) so the breakdown always sums to the
-        // total, even when a booking's status has drifted out of sync with its room's status.
-        $inHouseBySource = Room::whereIn('status', ['In-House', 'Checkin'])
-            ->with(['bookings' => fn($q) => $q->where('status', 'checked_in')->with('bookingSource')->latest('id')])
+        // In-House Rooms — aligned with BookingController check-in count
+        $inHouseBookingsQuery = Booking::where('hotel_id', active_hotel_id())
+            ->where('status', 'checked_in')
+            ->where(function ($q) use ($today) {
+                $q->whereNull('actual_check_out')
+                    ->orWhere(function ($rq) use ($today) {
+                        $rq->whereDate('check_in', '<=', $today)
+                            ->whereDate('check_out', '>=', $today);
+                    });
+            });
+
+        $inHouseRooms = $inHouseBookingsQuery->count();
+
+        // In-House Rooms breakdown by booking source — normalized, walk-in mapped to UMUM
+        $inHouseBySource = (clone $inHouseBookingsQuery)
+            ->with('bookingSource')
             ->get()
-            ->groupBy(fn($room) => $room->bookings->first()?->bookingSource?->name ?? 'Lainnya')
+            ->groupBy(function ($booking) {
+                $source = $booking->bookingSource?->name ?? $booking->source;
+                if (!$source || in_array(strtolower(trim($source)), ['walk_in', 'walk in', 'langsung / walk-in', ''])) {
+                    return 'UMUM';
+                }
+                return strtoupper(trim($source));
+            })
             ->map->count()
             ->sortDesc();
         $totalActiveGuests = Booking::where('hotel_id', active_hotel_id())->where('status', 'checked_in')->sum(DB::raw('adults + children'));

@@ -30,28 +30,7 @@ class CleaningTaskService
                 'status' => CleaningTask::STATUS_BELUM_MULAI,
             ]);
 
-            // 1. Check if room has custom checklist
-            $roomChecklist = $room->checklistTemplates()->active()->orderBy('sort_order')->get();
-
-            if ($roomChecklist->isNotEmpty()) {
-                // Use specific checklist for this room
-                $templateItems = $roomChecklist;
-            } else {
-                // Fallback: use all active hotel templates
-                $templateItems = CleaningChecklistTemplate::where('hotel_id', $room->hotel_id)
-                    ->active()
-                    ->orderBy('sort_order')
-                    ->get();
-            }
-
-            foreach ($templateItems as $item) {
-                CleaningChecklistItem::create([
-                    'cleaning_task_id' => $task->id,
-                    'name' => $item->name,
-                    'sort_order' => $item->sort_order,
-                    'is_done' => false,
-                ]);
-            }
+            $this->populateChecklistForTask($task, $room);
 
             // Load relationships for broadcast
             $task->load(['room', 'assignedUser']);
@@ -232,6 +211,44 @@ class CleaningTaskService
     public function calculateProgress(CleaningTask $task): float
     {
         return $task->calculateProgress();
+    }
+
+    /**
+     * Populate checklist items for a task from room/hotel templates if not already populated.
+     */
+    public function populateChecklistForTask(CleaningTask $task, ?Room $room = null): void
+    {
+        if ($task->checklistItems()->count() > 0) {
+            return;
+        }
+
+        $room = $room ?? $task->room ?? Room::find($task->room_id);
+        if (!$room) {
+            return;
+        }
+
+        // 1. Check if room has custom checklist
+        $roomChecklist = $room->checklistTemplates()->active()->orderBy('sort_order')->get();
+
+        if ($roomChecklist->isNotEmpty()) {
+            // Use specific checklist for this room
+            $templateItems = $roomChecklist;
+        } else {
+            // Fallback: use all active hotel templates
+            $templateItems = CleaningChecklistTemplate::where('hotel_id', $room->hotel_id)
+                ->active()
+                ->orderBy('sort_order')
+                ->get();
+        }
+
+        foreach ($templateItems as $item) {
+            CleaningChecklistItem::create([
+                'cleaning_task_id' => $task->id,
+                'name' => $item->name,
+                'sort_order' => $item->sort_order,
+                'is_done' => false,
+            ]);
+        }
     }
 
     /**

@@ -174,21 +174,24 @@ class ReportService
         // ReportController::revenue's sourcePerformance -- so this breaks down
         // by actual source (Reddoorz/Traveloka/Agoda/Tunai/...) instead of the
         // old Walk_in/Online buckets.
+        $sourceExpr = "CASE 
+            WHEN LOWER(TRIM(COALESCE(booking_sources.name, bookings.source, ''))) IN ('walk_in', 'walk in', 'langsung / walk-in', '') THEN 'UMUM'
+            WHEN UPPER(TRIM(COALESCE(booking_sources.name, bookings.source, ''))) = 'REDDOORZ' THEN 'REDDOORS'
+            ELSE UPPER(TRIM(COALESCE(booking_sources.name, bookings.source, 'UMUM')))
+        END";
+
         $roomRevenueQuery = Booking::leftJoin('booking_sources', 'bookings.booking_source_id', '=', 'booking_sources.id')
             ->whereBetween('bookings.created_at', [$startDate, $endDate])
             ->whereNotIn('bookings.status', ['cancelled'])
             ->select(
-                DB::raw("COALESCE(booking_sources.name, bookings.source, 'Lainnya') as source"),
+                DB::raw("$sourceExpr as source"),
                 DB::raw('COUNT(*) as booking_count'),
                 DB::raw('SUM(bookings.total_price) as total_invoice_value'), // Value for external
                 DB::raw('SUM(bookings.base_price) as total_revenue'), // Value for internal/tax
                 DB::raw('SUM(bookings.discount_amount) as total_discount'),
                 DB::raw('SUM(bookings.tax_amount) as total_tax')
             )
-            // Group by the expression itself, not the "source" alias -- it collides
-            // with the real bookings.source column and MySQL's ONLY_FULL_GROUP_BY
-            // would silently group by that column instead of the COALESCE result.
-            ->groupBy(DB::raw("COALESCE(booking_sources.name, bookings.source, 'Lainnya')"));
+            ->groupBy(DB::raw($sourceExpr));
         if ($hotelId) {
             $roomRevenueQuery->where('bookings.hotel_id', $hotelId);
         }

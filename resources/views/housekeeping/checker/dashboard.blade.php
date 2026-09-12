@@ -10,9 +10,29 @@
 
     <div class="row">
         <div class="col-12">
-            <div class="d-flex align-items-center justify-content-between mb-3">
-                <h4 class="mb-0">Task Menunggu Verifikasi</h4>
-                <span class="badge bg-primary fs-6">{{ $tasks->count() }} task</span>
+            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <h4 class="mb-0">Task Menunggu Verifikasi</h4>
+                    <span class="badge bg-primary fs-6">{{ $tasks->count() }} task</span>
+                    @if(!$showAll)
+                        <span class="badge bg-info-subtle text-info">Hari Ini ({{ \Carbon\Carbon::parse($date)->translatedFormat('d M Y') }})</span>
+                    @else
+                        <span class="badge bg-warning-subtle text-warning">Semua Periode</span>
+                    @endif
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <form method="GET" class="d-flex align-items-center gap-2">
+                        <input type="date" name="date" class="form-control form-control-sm" value="{{ $date }}" onchange="this.form.submit()">
+                        @if($showAll)
+                            <a href="{{ route('housekeeping.checker.dashboard') }}" class="btn btn-sm btn-outline-secondary text-nowrap">Filter Hari Ini</a>
+                        @else
+                            <a href="{{ route('housekeeping.checker.dashboard', ['all' => 1]) }}" class="btn btn-sm btn-outline-secondary text-nowrap">Lihat Semua</a>
+                        @endif
+                    </form>
+                    <a href="{{ route('reports.housekeeping') }}" class="btn btn-sm btn-outline-info text-nowrap">
+                        <i class="ri-file-chart-line me-1"></i> Ke Laporan
+                    </a>
+                </div>
             </div>
         </div>
     </div>

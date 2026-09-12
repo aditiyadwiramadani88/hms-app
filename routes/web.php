@@ -500,6 +500,7 @@ Route::prefix('admin')->group(function () {
         Route::put('/checklist-templates/{template}', [ChecklistTemplateController::class, 'update'])->name('checklist-templates.update');
         Route::delete('/checklist-templates/{template}', [ChecklistTemplateController::class, 'destroy'])->name('checklist-templates.destroy');
     });
+    Route::get('/housekeeping/checklist-templates-alias', [ChecklistTemplateController::class, 'index'])->name('checklist-templates.index')->middleware(['auth', 'permission:manage housekeeping']);
 
     // Bonus Reports
     Route::get('/bonus-reports', [BonusReportController::class, 'index'])->name('bonus-reports.index')->middleware('permission:view reports|reports.bonus');

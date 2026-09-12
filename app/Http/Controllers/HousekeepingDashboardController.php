@@ -37,6 +37,11 @@ class HousekeepingDashboardController extends Controller
             $task->refresh();
         }
 
+        // Auto-populate checklist items if empty (e.g. legacy/manually created tasks)
+        if ($task->checklistItems()->count() === 0) {
+            $this->taskService->populateChecklistForTask($task);
+        }
+
         $task->load([
             'room.roomType',
             'checklistItems' => fn($q) => $q->orderBy('sort_order'),
@@ -55,17 +60,18 @@ class HousekeepingDashboardController extends Controller
     {
         Gate::authorize('update', $item->cleaningTask);
 
-        // If mark_done is provided, mark as done with optional comment (no photo required)
+        // If mark_done is provided, mark as done/undone with optional comment (no photo required)
         if ($request->has('mark_done')) {
+            $isDone = $request->boolean('mark_done');
             $item->update([
-                'is_done' => true,
-                'comment' => $request->input('comment'),
+                'is_done' => $isDone,
+                'comment' => $request->input('comment', $item->comment),
                 'verification_status' => 'pending',
-                'checker_note' => null,
+                'checker_note' => $isDone ? null : $item->checker_note,
             ]);
             return response()->json([
                 'success' => true,
-                'is_done' => true,
+                'is_done' => $isDone,
             ]);
         }
 

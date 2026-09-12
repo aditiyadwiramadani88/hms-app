@@ -10,28 +10,44 @@ use Illuminate\Support\Facades\Storage;
 
 class HousekeepingCheckerController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $tasks = CleaningTask::where('status', CleaningTask::STATUS_MENUNGGU_VERIFIKASI)
-            ->with(['room.roomType', 'assignedUser', 'checklistItems', 'photos'])
-            ->latest()
-            ->get();
+        $date = $request->query('date', now()->toDateString());
+        $showAll = $request->boolean('all', false);
+
+        $tasksQuery = CleaningTask::where('status', CleaningTask::STATUS_MENUNGGU_VERIFIKASI)
+            ->with(['room.roomType', 'assignedUser', 'checklistItems', 'photos']);
+
+        if (!$showAll) {
+            $tasksQuery->whereDate('created_at', $date);
+        }
+
+        $tasks = $tasksQuery->latest()->get();
 
         // History: tasks that have been verified (approved/rejected/revised)
-        $history = CleaningTask::whereIn('status', [
+        $historyQuery = CleaningTask::whereIn('status', [
                 CleaningTask::STATUS_SELESAI,
                 CleaningTask::STATUS_REVISI,
             ])
-            ->with(['room.roomType', 'assignedUser', 'logs' => fn($q) => $q->latest()->limit(1)])
-            ->latest('updated_at')
-            ->limit(20)
+            ->with(['room.roomType', 'assignedUser', 'logs' => fn($q) => $q->latest()->limit(1)]);
+
+        if (!$showAll) {
+            $historyQuery->whereDate('updated_at', $date);
+        }
+
+        $history = $historyQuery->latest('updated_at')
+            ->limit(30)
             ->get();
 
-        return view('housekeeping.checker.dashboard', compact('tasks', 'history'));
+        return view('housekeeping.checker.dashboard', compact('tasks', 'history', 'date', 'showAll'));
     }
 
     public function show(CleaningTask $task)
     {
+        if ($task->checklistItems()->count() === 0) {
+            app(\App\Services\CleaningTaskService::class)->populateChecklistForTask($task);
+        }
+
         $task->load([
             'room.roomType',
             'assignedUser',

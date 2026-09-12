@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\ReportService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
@@ -150,15 +151,21 @@ class ReportController extends Controller
 
         $report = $this->reportService->getRevenueReport($startDate, $endDate);
         $roomTypePerformance = $this->reportService->getRoomTypePerformance($startDate, $endDate);
+        $sourceExpr = "CASE 
+            WHEN LOWER(TRIM(COALESCE(booking_sources.name, bookings.source, ''))) IN ('walk_in', 'walk in', 'langsung / walk-in', '') THEN 'UMUM'
+            WHEN UPPER(TRIM(COALESCE(booking_sources.name, bookings.source, ''))) = 'REDDOORZ' THEN 'REDDOORS'
+            ELSE UPPER(TRIM(COALESCE(booking_sources.name, bookings.source, 'UMUM')))
+        END";
+
         $sourcePerformance = \App\Models\Booking::query()
             ->leftJoin('booking_sources', 'bookings.booking_source_id', '=', 'booking_sources.id')
             ->whereBetween('bookings.check_in', [$startDate->toDateString(), $endDate->toDateString()])
             ->whereNotIn('bookings.status', ['cancelled', 'no_show'])
-            ->selectRaw("COALESCE(booking_sources.name, bookings.source, 'Tidak Ada') as source_name")
-            ->selectRaw("COALESCE(booking_sources.color, 'secondary') as source_color")
+            ->selectRaw("$sourceExpr as source_name")
+            ->selectRaw("MAX(COALESCE(booking_sources.color, 'secondary')) as source_color")
             ->selectRaw('COUNT(bookings.id) as total_bookings')
             ->selectRaw('SUM(bookings.total_price) as total_revenue')
-            ->groupBy('source_name', 'source_color')
+            ->groupBy(DB::raw($sourceExpr))
             ->orderByDesc('total_revenue')
             ->get();
 
