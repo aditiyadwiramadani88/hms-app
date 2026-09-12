@@ -262,7 +262,11 @@
                 <td class="text-right">{{ number_format($booking->room->price_override ?? $booking->room->roomType->base_price ?? 0, 2) }}</td>
                 <td class="text-right">{{ number_format($booking->subtotal ?? 0, 2) }}</td>
             </tr>
-            @if($booking->posCharges ?? 0 > 0)
+            @php
+                $posSum = $booking->posOrders->sum('total_amount') ?? 0;
+                $extraSum = $booking->transactions->where('type', 'charge')->where('is_deposit', false)->whereNull('reference_id')->sum('amount') ?? 0;
+            @endphp
+            @if($posSum > 0)
             <tr>
                 <td>2</td>
                 <td>
@@ -270,19 +274,19 @@
                     <span style="color: #666; font-size: 11px;">Food, beverages, and other services</span>
                 </td>
                 <td class="text-center">1</td>
-                <td class="text-right">{{ number_format($booking->pos_charges ?? 0, 2) }}</td>
-                <td class="text-right">{{ number_format($booking->pos_charges ?? 0, 2) }}</td>
+                <td class="text-right">{{ number_format($posSum, 2) }}</td>
+                <td class="text-right">{{ number_format($posSum, 2) }}</td>
             </tr>
             @endif
-            @if($booking->additional_charges ?? 0 > 0)
+            @if($extraSum > 0)
             <tr>
                 <td>3</td>
                 <td>
                     <strong>Additional Charges</strong>
                 </td>
                 <td class="text-center">1</td>
-                <td class="text-right">{{ number_format($booking->additional_charges ?? 0, 2) }}</td>
-                <td class="text-right">{{ number_format($booking->additional_charges ?? 0, 2) }}</td>
+                <td class="text-right">{{ number_format($extraSum, 2) }}</td>
+                <td class="text-right">{{ number_format($extraSum, 2) }}</td>
             </tr>
             @endif
         </tbody>
@@ -308,7 +312,7 @@
         @endif
         <tr class="total-row">
             <td>Total Amount</td>
-            <td class="text-right">{{ number_format($booking->total_price ?? 0, 2) }}</td>
+            <td class="text-right">{{ number_format(($booking->total_price ?? 0) + $posSum + $extraSum, 2) }}</td>
         </tr>
     </table>
 
@@ -343,7 +347,7 @@
                 </tr>
                 <tr style="background-color: #f9fafb;">
                     <td colspan="3" class="text-right"><strong>Balance Due:</strong></td>
-                    <td class="text-right" style="color: #991b1b;"><strong>{{ number_format(($booking->total_price ?? 0) - ($booking->total_paid ?? 0), 2) }}</strong></td>
+                    <td class="text-right" style="color: #991b1b;"><strong>{{ number_format(($booking->total_price ?? 0) + $posSum + $extraSum - ($booking->total_paid ?? 0), 2) }}</strong></td>
                     <td></td>
                 </tr>
             </tbody>

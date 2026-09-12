@@ -17,7 +17,6 @@ class BookingPriceService
 
         $posUnpaid = $booking->posOrders()
             ->where('status', 'completed')
-            ->where('payment_status', 'unpaid')
             ->sum('total_amount');
 
         // total_price already includes the deposit set at booking creation

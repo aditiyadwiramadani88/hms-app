@@ -41,7 +41,8 @@
                                 @php
                                     $manualExtraTotal = $unpaid->transactions->where('type', 'charge')->where('status', 'success')->where('reference_id', null)->where('is_deposit', false)->sum('amount');
                                     $posTotal = $unpaid->posOrders->sum('total_amount');
-                                    $gTotal = $unpaid->total_price + $manualExtraTotal + $posTotal;
+                                    $totalDeposit = $unpaid->transactions->where('type', 'charge')->where('status', 'success')->where('is_deposit', true)->sum('amount');
+                                    $gTotal = $unpaid->total_price + $manualExtraTotal + $posTotal + $totalDeposit;
                                     $tPaid = $unpaid->transactions->where('type', 'payment')->where('status', 'success')->sum('amount');
                                     $rem = $gTotal - $tPaid;
                                 @endphp

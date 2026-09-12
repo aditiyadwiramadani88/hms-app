@@ -81,7 +81,7 @@ class BookingService
             $breakfastTotal = 0;
             $appliedTier = 'public'; // Default tier
             if ($includeBreakfast) {
-                $pax = 1; // Fixed 1 pack per room per night
+                $pax = ($data['adults'] ?? 1) + ($data['children'] ?? 0);
                 $nights = max(1, $checkIn->diffInDays($checkOut));
                 
                 // Determine which breakfast tier to use:
@@ -103,7 +103,7 @@ class BookingService
                     $breakfastPrice = (float) ($room->price_breakfast_public ?? 0);
                 }
                 
-                $breakfastTotal = $breakfastPrice * $nights;
+                $breakfastTotal = $breakfastPrice * $pax * $nights;
             }
             
             // Store tier_applied in pricing_breakdown for future reference
@@ -128,7 +128,7 @@ class BookingService
                 'base_price' => $priceData['base_price'],
                 'discount_amount' => $priceData['discount_amount'],
                 'tax_amount' => $priceData['tax_amount'],
-                'total_price' => $priceData['total_price'] + ($data['deposit_amount'] ?? 0) + $breakfastTotal,
+                'total_price' => $priceData['total_price'] + $breakfastTotal,
                 'include_breakfast' => $includeBreakfast,
                 'pricing_breakdown' => $priceData['breakdown'],
                 'stay_type' => $data['stay_type'] ?? 'daily',
@@ -873,7 +873,7 @@ class BookingService
             $totalBasePrice = (float) $manualPrice * $kostMonths;
         } elseif ($stayType === 'monthly' && $nights >= 25 && $manualPrice === null) {
             $kostMonths = max(1, (int) round($nights / 30));
-            $baseKosPrice = (float) ($room->price_kos ?? $room->price_public ?? 0);
+            $baseKosPrice = (float) ($room->price_kos ?? ($room->price_public ? $room->price_public * 30 : 0));
             // Look up pricing tier for (room, duration_months)
             $tier = $room->kostPricingTiers()
                 ->where('duration_months', $kostMonths)

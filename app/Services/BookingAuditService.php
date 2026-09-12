@@ -232,7 +232,6 @@ class BookingAuditService
             ? (float) ($booking->pricing_breakdown['breakfast_total'] ?? 0)
             : 0;
         $expectedTotal = max(0, (float) $booking->base_price - (float) $booking->discount_amount)
-            + ($booking->deposit_amount ?? 0)
             + $breakfastTotal;
 
         if (abs($expectedTotal - (float) $booking->total_price) > 1) {
@@ -318,7 +317,7 @@ class BookingAuditService
             'expected' => [
                 'base_price' => $expectedBasePrice,
                 'discount_amount' => $expectedDiscount,
-                'total_price' => max(0, $expectedBasePrice - $expectedDiscount) + ($booking->deposit_amount ?? 0) + $breakfastTotal,
+                'total_price' => max(0, $expectedBasePrice - $expectedDiscount) + $breakfastTotal,
             ],
             'actual' => [
                 'base_price' => (float) $booking->base_price,
@@ -338,7 +337,12 @@ class BookingAuditService
         if (!$room) return (float) $booking->base_price;
 
         if ($stayType === 'monthly') {
-            $baseKosPrice = (float) ($room->price_kos ?? $room->price_public ?? 0);
+            $dailyPrice = (float) ($room->price_public ?? $room->roomType->base_price ?? 0);
+            if (empty($room->price_kos)) {
+                $baseKosPrice = $dailyPrice * 30; // Fallback to 30x daily rate if price_kos not set
+            } else {
+                $baseKosPrice = (float) $room->price_kos;
+            }
             $kostMonths = max(1, (int) round($nights / 30));
 
             $tier = $room->kostPricingTiers()

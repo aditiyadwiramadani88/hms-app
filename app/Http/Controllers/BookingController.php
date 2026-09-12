@@ -773,7 +773,6 @@ class BookingController extends Controller
             ->sum("amount");
         $posTotal = \App\Models\PosOrder::where('booking_id', $booking->id)
             ->where("status", "completed")
-            ->where("payment_status", "unpaid")
             ->sum('total_amount');
 
         $extraCharges = $booking->transactions
@@ -801,7 +800,8 @@ class BookingController extends Controller
         $grandTotal =
             $booking->total_price +
             $manualExtraTotal +
-            $posTotal;
+            $posTotal +
+            $totalDeposit;
         $totalPayments = \App\Models\Transaction::where('booking_id', $booking->id)
             ->where("type", "payment")
             ->where("status", "success")
@@ -984,7 +984,8 @@ class BookingController extends Controller
                         $breakfastPrice =
                             (float) ($newRoom->price_breakfast_public ?? 0);
                     }
-                    $breakfastTotal = $breakfastPrice * $nights;
+                    $pax = ($validated['adults'] ?? 1) + ($validated['children'] ?? 0);
+                    $breakfastTotal = $breakfastPrice * $pax * $nights;
                 }
 
                 // Store tier_applied in pricing_breakdown
@@ -996,7 +997,6 @@ class BookingController extends Controller
 
                 $totalPrice =
                     $priceData["total_price"] +
-                    $depositAmount +
                     $breakfastTotal;
 
                 $booking->update([
@@ -2203,7 +2203,8 @@ class BookingController extends Controller
         $totalCharges =
             $baseTotal +
             $extraCharges->sum("amount") +
-            $posOrders->sum("total_amount");
+            $posOrders->sum("total_amount") +
+            $booking->transactions->where("type", "charge")->where("is_deposit", true)->sum("amount");
 
         // 5. Cap display payments to match shown charges (prevent showing overpaid)
         $payments = collect();
@@ -2265,7 +2266,8 @@ class BookingController extends Controller
         $totalCharges =
             $booking->total_price +
             $extraCharges->sum("amount") +
-            $posOrders->sum("total_amount");
+            $posOrders->sum("total_amount") +
+            $booking->transactions->where("type", "charge")->where("is_deposit", true)->sum("amount");
         $totalPaid = $booking->transactions
             ->where("type", "payment")
             ->where("status", "success")
