@@ -3,7 +3,7 @@
 @section('title', 'Laporan Housekeeping')
 
 @section('content')
-<x-breadcrumb title="Laporan Housekeeping" :links="[['label' => 'Reports', 'url' => route('reports.index')]]" />
+<x-breadcrumb title="Laporan Housekeeping" :links="[['label' => 'Housekeeping', 'url' => route('housekeeping.index')]]" />
 <div class="row">
     <div class="col-12">
         <div class="card">
@@ -62,58 +62,107 @@
                     </div>
                 </form>
 
-                {{-- Laporan Per Anak Yang Bertugas --}}
-                @if(!empty($reportData['grouped_by_staff']) && count($reportData['grouped_by_staff']) > 0)
-                    @foreach($reportData['grouped_by_staff'] as $staffName => $tasks)
-                    <div class="card border mb-4">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
-                            <h6 class="mb-0 fs-14">
-                                <i class="ri-user-star-line text-primary me-2"></i><strong>Staff: {{ $staffName }}</strong>
-                            </h6>
-                            <span class="badge bg-primary-subtle text-primary">{{ count($tasks) }} Kamar Selesai</span>
-                        </div>
-                        <div class="card-body p-0">
-                            <div class="table-responsive">
-                                <table class="table table-bordered table-hover table-nowrap table-sm mb-0">
-                                    <thead class="table-dark">
-                                        <tr>
-                                            <th style="width: 50px;" class="text-center">NO</th>
-                                            <th>TANGGAL</th>
-                                            <th>KAMAR YANG DIKERJAKAN</th>
-                                            <th>NAMA STAFF</th>
-                                            <th>SUMBER BOOKING</th>
-                                            <th>KATEGORI BONUS</th>
-                                            <th class="text-center">STATUS VERIFIKASI</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach($tasks as $i => $d)
-                                        <tr>
-                                            <td class="text-center">{{ $i + 1 }}</td>
-                                            <td>{{ $d['tanggal'] }}</td>
-                                            <td class="fw-semibold text-dark">{{ $d['kamar'] }}</td>
-                                            <td>{{ $d['staff'] }}</td>
-                                            <td><span class="badge bg-info-subtle text-info">{{ $d['sumber'] }}</span></td>
-                                            <td><span class="badge bg-light text-dark border">{{ $d['kategori_bonus'] }}</span></td>
-                                            <td class="text-center">
-                                                <span class="badge bg-success">Selesai / Approved</span>
-                                            </td>
-                                        </tr>
-                                        @endforeach
-                                    </tbody>
-                                </table>
-                            </div>
+                {{-- TABLE 1: Rekap Per Staff (Summary) --}}
+                @if(!empty($reportData['summary']) && count($reportData['summary']) > 0)
+                <div class="card border mb-4">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                        <h6 class="mb-0 fs-14">
+                            <i class="ri-bar-chart-line text-primary me-2"></i><strong>1. Rekap Per Staff (Total {{ $reportData['total_tasks'] }} Kamar)</strong>
+                        </h6>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-sm table-hover align-middle mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th style="width: 50px;" class="text-center">NO</th>
+                                        <th>NAMA STAFF</th>
+                                        <th class="text-center" style="width: 130px;">JUMLAH TUGAS</th>
+                                        <th>PER SUMBER BOOKING</th>
+                                        <th>PER JENIS KAMAR</th>
+                                        <th>PER KATEGORI BONUS</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($reportData['summary'] as $i => $row)
+                                    <tr>
+                                        <td class="text-center">{{ $i + 1 }}</td>
+                                        <td class="fw-semibold text-dark">{{ $row['nama'] }}</td>
+                                        <td class="text-center">
+                                            <span class="badge bg-primary fs-12 px-3 py-1">{{ $row['jumlah'] }} Kamar</span>
+                                        </td>
+                                        <td>
+                                            @foreach($row['by_source'] as $label => $count)
+                                                <span class="badge bg-info-subtle text-info me-1 mb-1">{{ $label }}: {{ $count }}</span>
+                                            @endforeach
+                                        </td>
+                                        <td>
+                                            @foreach($row['by_room_type'] as $label => $count)
+                                                <span class="badge bg-secondary-subtle text-secondary me-1 mb-1">{{ $label }}: {{ $count }}</span>
+                                            @endforeach
+                                        </td>
+                                        <td>
+                                            @foreach($row['by_bonus_category'] as $label => $count)
+                                                <span class="badge bg-success-subtle text-success me-1 mb-1">{{ $label }}: {{ $count }}</span>
+                                            @endforeach
+                                        </td>
+                                    </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
                         </div>
                     </div>
-                    @endforeach
-                @else
-                    <div class="card border">
-                        <div class="card-body text-center text-muted py-5">
-                            <i class="ri-inbox-line fs-1 text-muted d-block mb-2"></i>
-                            Tidak ada data tugas housekeeping di periode ini.
-                        </div>
-                    </div>
+                </div>
                 @endif
+
+                {{-- TABLE 2: Detail Tugas --}}
+                <div class="card border">
+                    <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+                        <h6 class="mb-0 fs-14">
+                            <i class="ri-list-check-2 text-primary me-2"></i><strong>2. Detail Tugas Yang Dikerjakan</strong>
+                        </h6>
+                        <span class="badge bg-secondary-subtle text-secondary">{{ $reportData['total_tasks'] }} Tugas</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover table-nowrap table-sm align-middle mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th style="width: 50px;" class="text-center">NO</th>
+                                        <th>TANGGAL</th>
+                                        <th>KAMAR YANG DIKERJAKAN</th>
+                                        <th>NAMA STAFF</th>
+                                        <th>SUMBER BOOKING</th>
+                                        <th>KATEGORI BONUS</th>
+                                        <th class="text-center">STATUS VERIFIKASI</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse($reportData['details'] as $i => $d)
+                                    <tr>
+                                        <td class="text-center">{{ $i + 1 }}</td>
+                                        <td>{{ $d['tanggal'] }}</td>
+                                        <td class="fw-semibold text-dark">{{ $d['kamar'] }}</td>
+                                        <td>{{ $d['staff'] }}</td>
+                                        <td><span class="badge bg-info-subtle text-info">{{ $d['sumber'] }}</span></td>
+                                        <td><span class="badge bg-light text-dark border">{{ $d['kategori_bonus'] }}</span></td>
+                                        <td class="text-center">
+                                            <span class="badge bg-success">{{ $d['status_verifikasi'] }}</span>
+                                        </td>
+                                    </tr>
+                                    @empty
+                                    <tr>
+                                        <td colspan="7" class="text-center text-muted py-5">
+                                            <i class="ri-inbox-line fs-1 text-muted d-block mb-2"></i>
+                                            Tidak ada data tugas housekeeping di periode ini.
+                                        </td>
+                                    </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

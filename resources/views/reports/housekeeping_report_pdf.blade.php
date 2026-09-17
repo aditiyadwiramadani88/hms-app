@@ -25,37 +25,76 @@
         <div class="date">Periode: {{ $monthObj->translatedFormat('F Y') }}</div>
     </div>
 
-    {{-- Tasks per staff --}}
-    @if(!empty($reportData['grouped_by_staff']) && count($reportData['grouped_by_staff']) > 0)
-        @foreach($reportData['grouped_by_staff'] as $staffName => $tasks)
-        <div class="section-title">STAFF: {{ strtoupper($staffName) }} ({{ count($tasks) }} Kamar Selesai)</div>
-        <table>
-            <thead>
-                <tr>
-                    <th style="width: 25px;">NO</th>
-                    <th>TANGGAL</th>
-                    <th>KAMAR YANG DIKERJAKAN</th>
-                    <th>NAMA STAFF</th>
-                    <th>SUMBER BOOKING</th>
-                    <th>KATEGORI BONUS</th>
-                    <th>STATUS VERIFIKASI</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach($tasks as $i => $d)
-                <tr>
-                    <td class="text-center">{{ $i + 1 }}</td>
-                    <td>{{ $d['tanggal'] }}</td>
-                    <td>{{ $d['kamar'] }}</td>
-                    <td>{{ $d['staff'] }}</td>
-                    <td class="text-center">{{ $d['sumber'] }}</td>
-                    <td class="text-center">{{ $d['kategori_bonus'] }}</td>
-                    <td class="text-center">{{ $d['status_verifikasi'] }}</td>
-                </tr>
-                @endforeach
-            </tbody>
-        </table>
-        @endforeach
+    {{-- TABLE 1: Rekap Per Staff (Summary) --}}
+    @if(!empty($reportData['summary']) && count($reportData['summary']) > 0)
+    <div class="section-title">1. REKAP PER STAFF (TOTAL {{ $reportData['total_tasks'] }} KAMAR)</div>
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 30px;">NO</th>
+                <th>NAMA STAFF</th>
+                <th style="width: 80px;">JUMLAH TUGAS</th>
+                <th>PER SUMBER BOOKING</th>
+                <th>PER JENIS KAMAR</th>
+                <th>PER KATEGORI BONUS</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($reportData['summary'] as $i => $row)
+            <tr>
+                <td class="text-center">{{ $i + 1 }}</td>
+                <td><strong>{{ $row['nama'] }}</strong></td>
+                <td class="text-center"><strong>{{ $row['jumlah'] }} Kamar</strong></td>
+                <td>
+                    @foreach($row['by_source'] as $label => $count)
+                        <span>{{ $label }}: {{ $count }}; </span>
+                    @endforeach
+                </td>
+                <td>
+                    @foreach($row['by_room_type'] as $label => $count)
+                        <span>{{ $label }}: {{ $count }}; </span>
+                    @endforeach
+                </td>
+                <td>
+                    @foreach($row['by_bonus_category'] as $label => $count)
+                        <span>{{ $label }}: {{ $count }}; </span>
+                    @endforeach
+                </td>
+            </tr>
+            @endforeach
+        </tbody>
+    </table>
+    @endif
+
+    {{-- TABLE 2: Detail Tugas --}}
+    <div class="section-title" style="margin-top: 20px;">2. DETAIL TUGAS YANG DIKERJAKAN</div>
+    @if(!empty($reportData['details']) && count($reportData['details']) > 0)
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 25px;">NO</th>
+                <th>TANGGAL</th>
+                <th>KAMAR YANG DIKERJAKAN</th>
+                <th>NAMA STAFF</th>
+                <th>SUMBER BOOKING</th>
+                <th>KATEGORI BONUS</th>
+                <th>STATUS VERIFIKASI</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($reportData['details'] as $i => $d)
+            <tr>
+                <td class="text-center">{{ $i + 1 }}</td>
+                <td>{{ $d['tanggal'] }}</td>
+                <td><strong>{{ $d['kamar'] }}</strong></td>
+                <td>{{ $d['staff'] }}</td>
+                <td class="text-center">{{ $d['sumber'] }}</td>
+                <td class="text-center">{{ $d['kategori_bonus'] }}</td>
+                <td class="text-center">{{ $d['status_verifikasi'] }}</td>
+            </tr>
+            @endforeach
+        </tbody>
+    </table>
     @else
         <p style="text-align:center; padding: 20px; color:#666;">Tidak ada data tugas housekeeping di periode ini.</p>
     @endif

@@ -135,15 +135,26 @@
                 </li>
                 @endif
 
-                {{-- Housekeeping Dashboard (Admin/Manager) --}}
+                {{-- Housekeeping Menu (Admin/Manager) --}}
                 @can('manage housekeeping')
                 <li class="nav-item">
-                    <a class="nav-link menu-link" href="{{ route('housekeeping.index') }}">
+                    <a class="nav-link menu-link {{ request()->routeIs('housekeeping.index', 'reports.housekeeping*') ? 'active' : '' }}" href="#sidebarHousekeeping" data-bs-toggle="collapse" role="button" aria-expanded="{{ request()->routeIs('housekeeping.index', 'reports.housekeeping*') ? 'true' : 'false' }}" aria-controls="sidebarHousekeeping">
                         <i class="ri-building-4-line"></i> <span>Housekeeping</span>
+                        <span class="menu-arrow"></span>
                     </a>
+                    <div class="collapse menu-dropdown {{ request()->routeIs('housekeeping.index', 'reports.housekeeping*') ? 'show' : '' }}" id="sidebarHousekeeping">
+                        <ul class="nav nav-sm flex-column">
+                            <li class="nav-item">
+                                <a href="{{ route('housekeeping.index') }}" class="nav-link {{ request()->routeIs('housekeeping.index') ? 'active' : '' }}">Dashboard</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="{{ route('reports.housekeeping') }}" class="nav-link {{ request()->routeIs('reports.housekeeping*') ? 'active' : '' }}">Laporan Housekeeping</a>
+                            </li>
+                        </ul>
+                    </div>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link menu-link" href="{{ route('housekeeping.checker.dashboard') }}">
+                    <a class="nav-link menu-link {{ request()->routeIs('housekeeping.checker.*') ? 'active' : '' }}" href="{{ route('housekeeping.checker.dashboard') }}">
                         <i class="ri-checkbox-multiple-line"></i> <span>QC / Checker</span>
                     </a>
                 </li>
@@ -517,11 +528,6 @@
                                 <a href="{{ route('reports.ob-performance') }}" class="nav-link">Performa OB</a>
                             </li>
                             @endcanany
-                            @can('manage housekeeping')
-                            <li class="nav-item">
-                                <a href="{{ route('reports.housekeeping') }}" class="nav-link">Laporan Housekeeping</a>
-                            </li>
-                            @endcan
                             @canany(['view reports', 'reports.transactions'])
                             <li class="nav-item">
                                 <a href="{{ route('reports.daily') }}" class="nav-link">Laporan Harian</a>
