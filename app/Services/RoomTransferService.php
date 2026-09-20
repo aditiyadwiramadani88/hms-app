@@ -20,21 +20,28 @@ class RoomTransferService
     {
         $now = Carbon::now()->startOfDay();
         $checkIn = ($booking->actual_check_in ?? $booking->check_in)->copy()->startOfDay();
-        $checkOut = ($newCheckOut ? $newCheckOut->copy()->startOfDay() : $booking->check_out->copy()->startOfDay());
+        $origCheckOut = $booking->check_out->copy()->startOfDay();
+        $checkOut = ($newCheckOut ? $newCheckOut->copy()->startOfDay() : $origCheckOut);
 
         // Total nights must match the updated duration
         $totalNights = max(1, (int) $checkIn->diffInDays($checkOut, false));
-        $nightsUsed = max(0, min($totalNights, (int) $checkIn->diffInDays($now, false)));
+        $origTotalNights = max(1, (int) $checkIn->diffInDays($origCheckOut, false));
+
+        // Nights already used in old room (bounded between 0 and original nights)
+        $rawNightsUsed = (int) $checkIn->diffInDays($now, false);
+        $nightsUsed = max(0, min($origTotalNights, $rawNightsUsed));
         $remainingNights = max(0, $totalNights - $nightsUsed);
 
         // Old room price per night from pricing_breakdown
         $breakdown = $booking->pricing_breakdown;
         $oldPricePerNight = 0;
         if (is_array($breakdown) && count($breakdown) > 0) {
-            $oldPricePerNight = (float) ($breakdown[0]['price'] ?? 0);
+            $firstNight = collect($breakdown)->first(fn($v) => is_array($v) && (isset($v['price'])));
+            if ($firstNight && isset($firstNight['price'])) {
+                $oldPricePerNight = (float) $firstNight['price'];
+            }
         }
         if ($oldPricePerNight <= 0) {
-            $origTotalNights = max(1, (int) $booking->check_in->diffInDays($booking->check_out, false));
             $oldPricePerNight = (float) ($booking->base_price / $origTotalNights);
         }
 
@@ -45,15 +52,14 @@ class RoomTransferService
             default => (float) ($newRoom->price_public ?? 0),
         };
 
-        // Calculate costs
+        // Calculate room costs
         $costOldRoom = $nightsUsed * $oldPricePerNight;
         $costNewRoom = $remainingNights * $newPricePerNight;
+        $roomSubtotal = $costOldRoom + $costNewRoom;
 
         // Breakfast calculation
         $breakfastTotal = 0;
         if ($booking->include_breakfast) {
-            $pax = 1; // Fixed 1 pack per room per night
-
             // Old breakfast for nights used
             $oldBreakfastPrice = $this->getBreakfastPrice($booking->room, $this->getOldTier($booking));
             $breakfastOld = $oldBreakfastPrice * $nightsUsed;
@@ -65,10 +71,18 @@ class RoomTransferService
             $breakfastTotal = $breakfastOld + $breakfastNew;
         }
 
-        $deposit = (float) ($booking->deposit_amount ?? 0);
         $discount = (float) ($booking->discount_amount ?? 0);
 
-        $newTotal = $costOldRoom + $costNewRoom + $breakfastTotal + $deposit - $discount;
+        // Tax calculation: if booking is not tax exempt and had tax, calculate tax on (room + breakfast - discount)
+        $taxAmount = 0;
+        if (!$booking->tax_exempt && (float)$booking->tax_amount > 0) {
+            $taxRate = (float)$booking->base_price > 0 ? ((float)$booking->tax_amount / (float)$booking->base_price) : 0.1;
+            $taxAmount = round(max(0, $roomSubtotal - $discount) * $taxRate, 2);
+        }
+
+        // NOTE: deposit_amount is a separate security deposit and NOT part of total_price.
+        // It should not be added to new_total to prevent phantom charges.
+        $newTotal = max(0, $roomSubtotal + $breakfastTotal + $taxAmount - $discount);
         $oldTotal = (float) $booking->total_price;
         
         // Price difference reflects the true difference between the new stay total and previous total
@@ -81,8 +95,10 @@ class RoomTransferService
             'new_price_per_night' => $newPricePerNight,
             'cost_old_room' => $costOldRoom,
             'cost_new_room' => $costNewRoom,
+            'room_subtotal' => $roomSubtotal,
             'breakfast_total' => $breakfastTotal,
-            'deposit' => $deposit,
+            'tax_amount' => $taxAmount,
+            'deposit' => (float) ($booking->deposit_amount ?? 0),
             'discount' => $discount,
             'old_total' => $oldTotal,
             'new_total' => $newTotal,
@@ -117,11 +133,14 @@ class RoomTransferService
             $oldRoom = $booking->room;
 
             $preview = $this->previewTransfer($booking, $newRoom, $tier, $newCheckOut);
-
-            // Update booking pricing
+            // Update booking pricing:
+            // 1. If it's a downgrade (cheaper), reduce the total price.
+            // 2. If it's an extension, update pricing for the added nights.
+            // 3. If it's an upgrade (more expensive), ONLY charge if chargeDifference is explicitly TRUE!
             $isDowngrade = $preview['price_difference'] < 0;
+            $isUpgrade = $preview['price_difference'] > 0;
             $hasExtension = $newCheckOut !== null && $newCheckOut->gt($booking->check_out);
-            $shouldUpdatePricing = $chargeDifference || $isDowngrade || $hasExtension || ($preview['price_difference'] != 0);
+            $shouldUpdatePricing = ($isUpgrade && $chargeDifference) || $isDowngrade || $hasExtension;
 
             $newBreakdown = $this->buildNewBreakdown($booking, $oldRoom, $newRoom, $tier, $preview, $shouldUpdatePricing);
             $newBasePrice = $shouldUpdatePricing
@@ -138,6 +157,10 @@ class RoomTransferService
                 'pricing_breakdown' => $newBreakdown,
             ];
 
+            if ($shouldUpdatePricing && isset($preview['tax_amount'])) {
+                $updateData['tax_amount'] = $preview['tax_amount'];
+            }
+
             if ($newCheckOut) {
                 $updateData['check_out'] = $newCheckOut;
             }
@@ -145,49 +168,55 @@ class RoomTransferService
             $booking->update($updateData);
 
             // Update BOOK-xxx transaction to match new total so remaining balance is updated
-            Transaction::where('booking_id', $booking->id)
-                ->where('reference_id', 'BOOK-' . $booking->id)
-                ->update(['amount' => $newTotalPrice]);
+            if ($shouldUpdatePricing) {
+                Transaction::where('booking_id', $booking->id)
+                    ->where('reference_id', 'BOOK-' . $booking->id)
+                    ->update(['amount' => $newTotalPrice]);
+            }
 
             // Update room statuses
             $oldRoom->update(['status' => 'dirty']);
             $newRoom->update(['status' => 'In-House']);
 
-            // Update payment status if price increased and was paid
-            if ($newTotalPrice > (float) $preview['old_total'] && $booking->payment_status === 'paid') {
-                $booking->update(['payment_status' => 'partial']);
-            }
-
-            // Create transfer record
+            // Record transfer history
             $transfer = RoomTransfer::create([
-                'hotel_id' => active_hotel_id(),
+                'hotel_id' => $booking->hotel_id,
                 'booking_id' => $booking->id,
                 'from_room_id' => $oldRoom->id,
                 'to_room_id' => $newRoom->id,
-                'transferred_at' => now(),
+                'transferred_at' => Carbon::now(),
                 'reason' => $reason,
                 'transferred_by' => Auth::id(),
                 'nights_in_old_room' => $preview['nights_used'],
                 'old_room_price_per_night' => $preview['old_price_per_night'],
                 'new_room_price_per_night' => $preview['new_price_per_night'],
-                'price_difference' => $preview['price_difference'],
+                'price_difference' => $shouldUpdatePricing ? $preview['price_difference'] : 0,
                 'new_tier_applied' => $tier,
                 'notes' => $notes,
             ]);
 
-            // Audit log
-            AuditLog::log(
-                'booking.room_transferred',
-                "Room transfer: Booking #{$booking->id} moved from room {$oldRoom->room_number} to {$newRoom->room_number}. Reason: {$reason}. Price diff: Rp " . number_format($preview['price_difference'], 0, ',', '.'),
-                $booking
-            );
+            // Audit Log
+            AuditLog::create([
+                'hotel_id' => $booking->hotel_id,
+                'user_id' => Auth::id(),
+                'action' => 'room_transfer',
+                'model_type' => Booking::class,
+                'model_id' => $booking->id,
+                'description' => "Booking #{$booking->id} dipindahkan dari Kamar {$oldRoom->room_number} ke Kamar {$newRoom->room_number}. Alasan: {$reason}" . ($chargeDifference ? ' (dengan selisih harga)' : ' (gratis/tanpa selisih)'),
+                'old_values' => ['room_id' => $oldRoom->id, 'room_number' => $oldRoom->room_number],
+                'new_values' => ['room_id' => $newRoom->id, 'room_number' => $newRoom->room_number, 'charge_difference' => $chargeDifference],
+            ]);
 
             return $transfer;
         });
     }
 
-    private function getBreakfastPrice(Room $room, string $tier): float
+    private function getBreakfastPrice(?Room $room, string $tier): float
     {
+        if (!$room) {
+            return 0;
+        }
+
         return match ($tier) {
             'sales' => (float) ($room->price_breakfast_sales ?? 0),
             'high_season' => (float) ($room->price_breakfast_high_season ?? 0),
@@ -211,10 +240,14 @@ class RoomTransferService
     {
         $oldBreakdown = $booking->pricing_breakdown;
         $breakdown = [];
+        $checkIn = ($booking->actual_check_in ?? $booking->check_in)->copy()->startOfDay();
 
         // Old room nights
         for ($i = 0; $i < $preview['nights_used']; $i++) {
+            $nightDate = $checkIn->copy()->addDays($i);
             $breakdown[] = [
+                'date' => $nightDate->toDateString(),
+                'day_of_week' => $nightDate->format('l'),
                 'night' => $i + 1,
                 'price' => $preview['old_price_per_night'],
                 'room' => $oldRoom->id,
@@ -222,13 +255,16 @@ class RoomTransferService
             ];
         }
 
-        // New room nights — always use new price for downgrades (cheaper room)
+        // New room nights — always use new price for downgrades (cheaper room) or if chargeDifference is true
         $isDowngrade = $preview['price_difference'] < 0;
         $applyNewPrice = $chargeDifference || $isDowngrade;
         $appliedNewPrice = $applyNewPrice ? $preview['new_price_per_night'] : $preview['old_price_per_night'];
 
         for ($i = 0; $i < $preview['remaining_nights']; $i++) {
+            $nightDate = $checkIn->copy()->addDays($preview['nights_used'] + $i);
             $breakdown[] = [
+                'date' => $nightDate->toDateString(),
+                'day_of_week' => $nightDate->format('l'),
                 'night' => $preview['nights_used'] + $i + 1,
                 'price' => $appliedNewPrice,
                 'room' => $newRoom->id,

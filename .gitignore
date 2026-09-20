@@ -53,3 +53,8 @@ catatan.txt
 database/seeders/CalendarSimulationSeeder.php
 docs/implementations/calendar_mobile_responsiveness_and_simulation.md
 docs/revisi/
+tests/Unit/BookingPricingAndWorkflowTest.php
+tests/Unit/RoomTransferExecutionTest.php
+tests/Unit/BookingExtensionExecutionTest.php
+tests/Unit/BookingLifecycleAndCheckoutTest.php
+tests/Unit/RoomAvailabilityConflictTest.php

@@ -91,7 +91,7 @@
                 <p><strong>Room:</strong> {{ $booking->room?->room_number ?? 'N/A' }} ({{ $booking->room?->roomType?->name ?? 'N/A' }})</p>
                 <p><strong>Check-in:</strong> {{ $booking->check_in->format('d M Y') }}</p>
                 <p><strong>Check-out:</strong> {{ $booking->check_out->format('d M Y') }}</p>
-                <p><strong>Nights:</strong> {{ $booking->check_in->diffInDays($booking->check_out) }}</p>
+                <p><strong>Nights:</strong> {{ $booking->total_nights }}</p>
                 <p><strong>Guests:</strong> {{ $booking->adults }} Adult(s) @if($booking->children > 0), {{ $booking->children }} Child(ren) @endif</p>
                 @if($booking->include_breakfast)
                 <p><strong>Breakfast:</strong> ✓ Include</p>
@@ -109,15 +109,23 @@
             </thead>
             <tbody>
                 @if($showRoom)
+                @php
+                    $breakdownNightlySum = is_array($booking->pricing_breakdown)
+                        ? collect($booking->pricing_breakdown)->filter(fn($d) => is_array($d) && isset($d['price']))->sum('price')
+                        : 0;
+                    $roomBase = ($breakdownNightlySum > 0 && $booking->stay_type !== 'monthly')
+                        ? $breakdownNightlySum
+                        : (float) $booking->base_price;
+                @endphp
                 <tr>
-                    <td>Room Charges ({{ $booking->check_in->diffInDays($booking->check_out) }} nights)</td>
-                    <td class="text-right">Rp {{ number_format(($booking->base_price + $roomMarkupTotal) / max(1, $booking->check_in->diffInDays($booking->check_out)), 0, ',', '.') }}</td>
-                    <td class="text-right">Rp {{ number_format($booking->base_price + $roomMarkupTotal, 0, ',', '.') }}</td>
+                    <td>Room Charges ({{ $booking->total_nights }} nights)</td>
+                    <td class="text-right">Rp {{ number_format(($roomBase + $roomMarkupTotal) / max(1, $booking->total_nights), 0, ',', '.') }}</td>
+                    <td class="text-right">Rp {{ number_format($roomBase + $roomMarkupTotal, 0, ',', '.') }}</td>
                 </tr>
                 @if($booking->include_breakfast)
                 @php
                     $breakfastTotal = $booking->pricing_breakdown['breakfast_total'] ?? 0;
-                    $bfNights = $booking->check_in->diffInDays($booking->check_out);
+                    $bfNights = $booking->total_nights;
                     $bfPerNight = $bfNights > 0 ? $breakfastTotal / $bfNights : $breakfastTotal;
                 @endphp
                 <tr>

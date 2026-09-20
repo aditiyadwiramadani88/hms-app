@@ -341,6 +341,7 @@ Route::prefix('admin')->group(function () {
     Route::delete('/bookings/{booking}/charges/{transaction}', [BookingController::class, 'deleteCharge'])->name('bookings.delete-charge')->middleware('permission:bookings.delete.unlimited|delete transactions');
     Route::get('/bookings/{booking}/invoice', [BookingController::class, 'invoice'])->name('bookings.invoice')->middleware('permission:bookings.invoice|manage reservations');
     Route::get('/bookings/{booking}/extend', [BookingController::class, 'extend'])->name('bookings.extend')->middleware('permission:bookings.extend|edit bookings');
+    Route::get('/bookings/{booking}/extend/preview', [BookingController::class, 'previewExtend'])->name('bookings.extend.preview')->middleware('permission:bookings.extend|edit bookings');
     Route::post('/bookings/{booking}/extend', [BookingController::class, 'processExtend'])->name('bookings.extend.process')->middleware('permission:bookings.extend|edit bookings');
 
     Route::put('/bookings/{booking}/edit-deposit', [BookingController::class, 'editDeposit'])->name('bookings.edit-deposit')->middleware('permission:bookings.payment.edit|bookings.payment.edit.unlimited|edit payments');

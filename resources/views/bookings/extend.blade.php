@@ -118,13 +118,61 @@
                                 @if(!empty($maxNewCheckOut))
                                     Maksimal s/d {{ \Carbon\Carbon::parse($maxNewCheckOut)->format('d M Y') }}
                                 @else
-                                    Pilih tanggal check-out baru
+                                    Pilih tanggal check-out baru untuk melihat rincian biaya perpanjangan
                                 @endif
                             </div>
                         </div>
 
+                        {{-- Loading Indicator --}}
+                        <div id="extend_preview_loading" class="text-center py-2 text-muted mb-3" style="display: none;">
+                            <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                            <span class="fs-13">Menghitung rincian subtotal perpanjangan...</span>
+                        </div>
+
+                        {{-- Error Alert --}}
+                        <div id="extend_preview_error" class="alert alert-danger py-2 mb-3" style="display: none;"></div>
+
+                        {{-- Subtotal Preview Box --}}
+                        <div id="extend_preview_box" class="card border border-primary-subtle bg-light mb-3" style="display: none;">
+                            <div class="card-body p-3">
+                                <h6 class="fs-13 fw-semibold text-primary mb-2">
+                                    <i class="ri-calculator-line me-1"></i> Rincian Subtotal Perpanjangan
+                                </h6>
+                                <table class="table table-sm table-borderless mb-0 fs-13">
+                                    <tr>
+                                        <td class="text-muted ps-0 py-1">Durasi Tambahan:</td>
+                                        <td class="text-end fw-medium py-1" id="prev_additional_days">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted ps-0 py-1">Biaya Kamar:</td>
+                                        <td class="text-end fw-medium py-1" id="prev_room_cost">-</td>
+                                    </tr>
+                                    <tr id="prev_breakfast_row" style="display: none;">
+                                        <td class="text-muted ps-0 py-1">Biaya Sarapan:</td>
+                                        <td class="text-end fw-medium py-1" id="prev_breakfast_cost">-</td>
+                                    </tr>
+                                    <tr id="prev_tax_row" style="display: none;">
+                                        <td class="text-muted ps-0 py-1">Pajak (Tax):</td>
+                                        <td class="text-end fw-medium py-1" id="prev_tax_cost">-</td>
+                                    </tr>
+                                    <tr class="border-top">
+                                        <td class="fw-bold ps-0 py-2 text-success">Total Biaya Tambahan:</td>
+                                        <td class="text-end fw-bold py-2 text-success fs-14" id="prev_total_additional">-</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="text-muted ps-0 py-1">Tagihan Saat Ini:</td>
+                                        <td class="text-end text-muted py-1" id="prev_current_total">-</td>
+                                    </tr>
+                                    <tr class="border-top">
+                                        <td class="fw-bold ps-0 py-2 fs-14">Grand Total Baru:</td>
+                                        <td class="text-end fw-bold py-2 fs-15 text-primary" id="prev_grand_total">-</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+
                         <div class="d-flex gap-2">
-                            <button type="submit" data-submit-protect="true" class="btn btn-primary" {{ !empty($isBlocked) && $isBlocked ? 'disabled' : '' }}>
+                            <button type="submit" id="btnSubmitExtend" data-submit-protect="true" class="btn btn-primary" {{ !empty($isBlocked) && $isBlocked ? 'disabled' : '' }}>
                                 <i class="ri-check-line me-1"></i> Simpan Perpanjangan
                             </button>
                             <a href="{{ route('bookings.show', $booking->id) }}" class="btn btn-secondary">
@@ -143,11 +191,14 @@
                 </div>
                 <div class="card-body">
                     <ul class="list-unstyled mb-0">
-                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Biaya tambahan akan otomatis dihitung dan ditambahkan ke tagihan.</li>
-                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Total tagihan (Grand Total) akan diperbarui setelah disimpan.</li>
-                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Untuk harian, harga mengikuti sistem <em>dynamic pricing</em>.</li>
-                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Untuk bulanan, dihitung per bulan (pembulatan ke atas).</li>
-                        <li class="mb-0"><i class="ri-check-double-line text-success me-2"></i> Perubahan ini akan mencatat periode inap baru di invoice.</li>
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Rincian subtotal akan otomatis dihitung saat memilih tanggal check-out baru.</li>
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Total tagihan (Grand Total) dan invoice akan langsung diperbarui setelah disimpan.</li>
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Untuk harian, tarif malam dihitung berdasarkan rata-rata tarif kamar booking awal.</li>
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Untuk bulanan (kost), tarif perpanjangan dihitung secara prorata harian (harga kost / 30 hari).</li>
+                        @if($booking->include_breakfast)
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Booking ini menyertakan sarapan, sehingga biaya sarapan otomatis dihitung untuk hari perpanjangan.</li>
+                        @endif
+                        <li class="mb-0"><i class="ri-check-double-line text-success me-2"></i> Perubahan ini akan mencatat periode inap baru secara otomatis di invoice.</li>
                     </ul>
                 </div>
             </div>
@@ -163,5 +214,78 @@
         @if(session('error'))
             Toastify({ text: "{{ session('error') }}", duration: 5000, gravity: "top", position: "right", style: { background: "#f06548" } }).showToast();
         @endif
+
+        function formatRupiah(num) {
+            return 'Rp ' + Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        }
+
+        const inputNewCheckout = document.getElementById('new_check_out');
+        const previewBox = document.getElementById('extend_preview_box');
+        const previewLoading = document.getElementById('extend_preview_loading');
+        const previewError = document.getElementById('extend_preview_error');
+        const submitBtn = document.getElementById('btnSubmitExtend');
+
+        function fetchExtendPreview() {
+            if (!inputNewCheckout) return;
+            const val = inputNewCheckout.value;
+            if (!val) {
+                previewBox.style.display = 'none';
+                previewError.style.display = 'none';
+                return;
+            }
+
+            previewLoading.style.display = 'block';
+            previewBox.style.display = 'none';
+            previewError.style.display = 'none';
+
+            fetch(`{{ route('bookings.extend.preview', $booking->id) }}?new_check_out=${val}`)
+                .then(res => res.json())
+                .then(res => {
+                    previewLoading.style.display = 'none';
+                    if (!res.success) {
+                        previewError.textContent = res.message || 'Gagal menghitung biaya perpanjangan.';
+                        previewError.style.display = 'block';
+                        if (submitBtn) submitBtn.disabled = true;
+                        return;
+                    }
+
+                    const d = res.data;
+                    document.getElementById('prev_additional_days').textContent = d.additional_days + (d.stay_type === 'monthly' ? ' hari' : ' malam');
+                    document.getElementById('prev_room_cost').textContent = formatRupiah(d.room_additional_cost);
+
+                    if (d.include_breakfast && d.breakfast_additional_cost > 0) {
+                        document.getElementById('prev_breakfast_row').style.display = '';
+                        document.getElementById('prev_breakfast_cost').textContent = formatRupiah(d.breakfast_additional_cost);
+                    } else {
+                        document.getElementById('prev_breakfast_row').style.display = 'none';
+                    }
+
+                    if (d.tax_additional > 0) {
+                        document.getElementById('prev_tax_row').style.display = '';
+                        document.getElementById('prev_tax_cost').textContent = formatRupiah(d.tax_additional);
+                    } else {
+                        document.getElementById('prev_tax_row').style.display = 'none';
+                    }
+
+                    document.getElementById('prev_total_additional').textContent = '+ ' + formatRupiah(d.total_additional);
+                    document.getElementById('prev_current_total').textContent = formatRupiah(d.current_total);
+                    document.getElementById('prev_grand_total').textContent = formatRupiah(d.new_grand_total);
+
+                    previewBox.style.display = 'block';
+                    if (submitBtn) submitBtn.disabled = false;
+                })
+                .catch(err => {
+                    previewLoading.style.display = 'none';
+                    previewError.textContent = 'Terjadi kesalahan saat memproses perhitungan perpanjangan.';
+                    previewError.style.display = 'block';
+                });
+        }
+
+        if (inputNewCheckout) {
+            inputNewCheckout.addEventListener('change', fetchExtendPreview);
+            if (inputNewCheckout.value) {
+                fetchExtendPreview();
+            }
+        }
     </script>
 @endsection

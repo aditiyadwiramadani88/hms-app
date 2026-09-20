@@ -145,15 +145,34 @@
                                         @else
                                             @php
                                                 $nightlyRate = $booking->room?->roomType?->base_price ?? 0;
+                                                $distinctPrices = collect();
+                                                $distinctRoomsCount = 0;
+                                                $nightRooms = collect();
+
                                                 if ($booking->pricing_breakdown && is_array($booking->pricing_breakdown)) {
-                                                    $firstNight = collect($booking->pricing_breakdown)->first(fn($d) => is_array($d) && isset($d['price']));
+                                                    $nightlyEntries = collect($booking->pricing_breakdown)->filter(fn($d) => is_array($d) && isset($d['price']));
+                                                    $distinctPrices = $nightlyEntries->pluck('price')->map(fn($p) => round((float)$p))->unique();
+                                                    $nightRoomIds = $nightlyEntries->pluck('room')->filter()->unique();
+                                                    if ($nightRoomIds->isNotEmpty()) {
+                                                        $nightRooms = \App\Models\Room::whereIn('id', $nightRoomIds)->pluck('room_number', 'id');
+                                                        $distinctRoomsCount = $nightRooms->count();
+                                                    }
+                                                    $firstNight = $nightlyEntries->first();
                                                     if ($firstNight) $nightlyRate = $firstNight['price'];
                                                 } elseif ($booking->base_price && $booking->check_in && $booking->check_out) {
-                                                    $nights = $booking->check_in->diffInDays($booking->check_out);
+                                                    $nights = $booking->total_nights;
                                                     if ($nights > 0) $nightlyRate = $booking->base_price / $nights;
                                                 }
                                             @endphp
-                                            Rp {{ number_format($nightlyRate, 0, ',', '.') }} / night
+                                            @if($distinctRoomsCount > 1 || $distinctPrices->count() > 1)
+                                                @php
+                                                    $currentRoomRate = $nightlyEntries->last()['price'] ?? ($booking->room?->price_public ?? $nightlyRate);
+                                                @endphp
+                                                <span class="badge bg-warning-subtle text-warning me-1">Tarif Bervariasi / Pindah Kamar</span>
+                                                <span class="fs-12 text-muted">(Kamar {{ $booking->room?->room_number ?? '' }}: Rp {{ number_format($currentRoomRate, 0, ',', '.') }}/night)</span>
+                                            @else
+                                                Rp {{ number_format($nightlyRate, 0, ',', '.') }} / night
+                                            @endif
                                         @endif
                                     </td>
                                 </tr>
@@ -161,10 +180,10 @@
                                     <td>{{ $booking->stay_type === 'monthly' ? 'Duration' : 'Number of Nights' }}</td>
                                     <td class="text-end fw-medium">
                                         @if($booking->stay_type === 'monthly')
-                                            @php $totalNights = $booking->check_in->diffInDays($booking->check_out); @endphp
+                                            @php $totalNights = $booking->total_nights; @endphp
                                             {{ (int) round($totalNights / 30) }} Bulan ({{ $totalNights }} Malam)
                                         @else
-                                            {{ $booking->check_in->diffInDays($booking->check_out) }}
+                                            {{ $booking->total_nights }}
                                         @endif
                                     </td>
                                 </tr>
@@ -175,7 +194,7 @@
                                     {{-- Monthly: Summary only, no per-night table --}}
                                     @php
                                         $periods = $booking->pricing_breakdown['periods'] ?? null;
-                                        $totalNights = $booking->check_in->diffInDays($booking->check_out);
+                                        $totalNights = $booking->total_nights;
                                         $totalMonths = max(1, (int) round($totalNights / 30));
                                         $nightlyEntries = collect($booking->pricing_breakdown)->filter(fn($item) => is_array($item) && (isset($item['date']) || isset($item['night'])));
                                     @endphp
@@ -227,14 +246,25 @@
                                                     <table class="table table-sm table-borderless mb-0">
                                                         <tbody>
                                                             @if(is_array($booking->pricing_breakdown))
-                                                            @foreach($booking->pricing_breakdown as $key => $day)
+                                                            @php
+                                                                $sortedDays = collect($booking->pricing_breakdown)
+                                                                    ->filter(fn($day) => is_array($day) && (isset($day['date']) || isset($day['night'])))
+                                                                    ->sortBy(fn($day) => $day['date'] ?? $day['night'] ?? 0);
+                                                            @endphp
+                                                            @foreach($sortedDays as $key => $day)
                                                             @if(is_array($day) && (isset($day['date']) || isset($day['night'])))
+                                                            @php
+                                                                $dayRoomNum = isset($day['room']) ? ($nightRooms[$day['room']] ?? null) : null;
+                                                            @endphp
                                                             <tr class="fs-12">
                                                                 <td class="text-muted">
                                                                     @if(isset($day['date']))
                                                                         {{ \Carbon\Carbon::parse($day['date'])->format('d M Y') }} ({{ $day['day_of_week'] ?? '' }})
                                                                     @else
                                                                         Malam {{ $day['night'] }}
+                                                                    @endif
+                                                                    @if($dayRoomNum)
+                                                                        <span class="badge bg-secondary-subtle text-secondary ms-1">Kamar {{ $dayRoomNum }}</span>
                                                                     @endif
                                                                 </td>
                                                                 <td class="text-end text-muted">Rp {{ number_format($day['price'] ?? 0, 0, ',', '.') }}</td>
@@ -249,9 +279,17 @@
                                             <div class="ps-3 fs-13 text-muted mb-2 summary-text">
                                                 @php
                                                     $breakdown = is_array($booking->pricing_breakdown) ? collect($booking->pricing_breakdown)->filter(fn($item) => is_array($item) && (isset($item['date']) || isset($item['night']))) : collect();
-                                                    $periods = $booking->pricing_breakdown["periods"] ?? null;
+                                                    $rawPeriods = $booking->pricing_breakdown["periods"] ?? null;
+                                                    $periods = null;
+                                                    if ($rawPeriods && is_array($rawPeriods)) {
+                                                        // Avoid displaying duplicate or conflicting identical period spans
+                                                        $uniqueSpans = collect($rawPeriods)->unique(fn($p) => ($p['start'] ?? '') . '-' . ($p['end'] ?? ''));
+                                                        if ($uniqueSpans->count() > 1 && $uniqueSpans->sum(fn($p) => (int)($p['nights'] ?? 0)) == $booking->total_nights) {
+                                                            $periods = $uniqueSpans;
+                                                        }
+                                                    }
                                                 @endphp
-                                                @if($periods && is_array($periods) && count($periods) > 1)
+                                                @if($periods && $periods->count() > 1)
                                                     @foreach($periods as $idx => $p)
                                                     <div class="mb-1">
                                                         @if(isset($p["label"]))
@@ -262,7 +300,7 @@
                                                         {{ \Carbon\Carbon::parse($p["start"])->format("d M Y") }}
                                                         <span class="mx-1">...</span>
                                                         {{ \Carbon\Carbon::parse($p["end"])->format("d M Y") }}
-                                                        <span class="badge bg-info-subtle text-info ms-1">{{ $p["nights"] }} Nights</span>
+                                                        <span class="badge bg-info-subtle text-info ms-1">{{ (int) round((float) ($p["nights"] ?? 0)) }} Nights</span>
                                                     </div>
                                                     @endforeach
                                                 @else
@@ -285,15 +323,23 @@
                                     @endif
                                 @endif
 
+                                @php
+                                    $breakdownNightlySum = is_array($booking->pricing_breakdown)
+                                        ? collect($booking->pricing_breakdown)->filter(fn($d) => is_array($d) && isset($d['price']))->sum('price')
+                                        : 0;
+                                    $displayRoomSubtotal = ($breakdownNightlySum > 0 && $booking->stay_type !== 'monthly')
+                                        ? $breakdownNightlySum
+                                        : (float) $booking->base_price;
+                                @endphp
                                 <tr class="border-top border-top-dashed">
                                     <td>Room Subtotal</td>
-                                    <td class="text-end fw-medium">Rp {{ number_format($booking->base_price, 0, ',', '.') }}</td>
+                                    <td class="text-end fw-medium">Rp {{ number_format($displayRoomSubtotal, 0, ',', '.') }}</td>
                                 </tr>
 
                                 @if($booking->include_breakfast)
                                 @php
                                     $breakfastTotal = $booking->pricing_breakdown['breakfast_total'] ?? 0;
-                                    $nights = $booking->check_in->diffInDays($booking->check_out);
+                                    $nights = $booking->total_nights;
                                     $breakfastPerNight = $nights > 0 ? $breakfastTotal / $nights : $breakfastTotal;
                                 @endphp
                                 <tr>
@@ -1929,6 +1975,16 @@
                                 </div>
                             </div>
                             <hr>
+                            @if($booking->include_breakfast)
+                            <div class="d-flex justify-content-between text-muted fs-12 mb-1" id="tp_breakfast_row" style="display: none;">
+                                <span>Sarapan (Total):</span><span id="tp_breakfast_total" class="fw-medium">-</span>
+                            </div>
+                            @endif
+                            @if(!$booking->tax_exempt && (float)$booking->tax_amount > 0)
+                            <div class="d-flex justify-content-between text-muted fs-12 mb-1" id="tp_tax_row" style="display: none;">
+                                <span>Pajak (Tax):</span><span id="tp_tax_total" class="fw-medium">-</span>
+                            </div>
+                            @endif
                             <div class="d-flex justify-content-between">
                                 <span>Total Lama:</span><span id="tp_old_total" class="fw-medium">-</span>
                             </div>
@@ -2061,7 +2117,7 @@
                 $totalPaidWa = $booking->transactions->where('type', 'payment')->where('status', 'success')->sum('amount');
                 $balanceWa = $totalChargesWa - $totalPaidWa;
                 $hotelNameWa = $booking->hotel->name ?? 'Our Homestay';
-                $nightsWa = $booking->check_in->diffInDays($booking->check_out);
+                $nightsWa = $booking->total_nights;
             @endphp
             var text = "*INVOICE - {!! addslashes($hotelNameWa) !!}*\n";
             text += "------------------------------------------\n";
@@ -2073,7 +2129,7 @@
             text += "Check-in: {{ $booking->check_in->format('d M Y') }}\n";
             text += "Check-out: {{ $booking->check_out->format('d M Y') }}\n\n";
             text += "*Billing Details:*\n";
-            text += "- Room ({{ $nightsWa }} malam): Rp {{ number_format($booking->base_price, 0, ',', '.') }}\n";
+            text += "- Room ({{ $nightsWa }} malam): Rp {{ number_format($displayRoomSubtotal ?? $booking->base_price, 0, ',', '.') }}\n";
             @if($booking->include_breakfast && ($booking->pricing_breakdown['breakfast_total'] ?? 0) > 0)
             text += "- Breakfast ({{ $nightsWa }} malam): Rp {{ number_format($booking->pricing_breakdown['breakfast_total'], 0, ',', '.') }}\n";
             @endif
@@ -2374,6 +2430,24 @@
                 document.getElementById('tp_old_total').textContent = formatRp(d.old_total);
                 document.getElementById('tp_new_total').textContent = formatRp(d.new_total);
 
+                if (document.getElementById('tp_breakfast_total')) {
+                    if (d.breakfast_total > 0) {
+                        document.getElementById('tp_breakfast_total').textContent = formatRp(d.breakfast_total);
+                        document.getElementById('tp_breakfast_row').style.display = 'flex';
+                    } else {
+                        document.getElementById('tp_breakfast_row').style.display = 'none';
+                    }
+                }
+
+                if (document.getElementById('tp_tax_total')) {
+                    if (d.tax_amount > 0) {
+                        document.getElementById('tp_tax_total').textContent = formatRp(d.tax_amount);
+                        document.getElementById('tp_tax_row').style.display = 'flex';
+                    } else {
+                        document.getElementById('tp_tax_row').style.display = 'none';
+                    }
+                }
+
                 const diffEl = document.getElementById('tp_difference');
                 const chargeOption = document.getElementById('transfer_charge_option');
                 const chargeDesc = document.getElementById('transfer_charge_desc');
@@ -2509,13 +2583,13 @@
                 return;
             }
             const a = data.data;
-            const severityBadge = { critical: 'danger', high: 'warning', medium: 'info', info: 'secondary' };
+            const rateUnit = a.stay_type === 'monthly' ? '/bulan' : '/malam';
 
             if (a.anomalies.length === 0) {
                 let html = '<div class="text-center text-success py-3">';
                 html += '<i class="ri-checkbox-circle-fill fs-3 d-block mb-1"></i>';
                 html += '<span class="fw-semibold">No anomaly detected. Pricing is correct.</span></div>';
-                html += '<div class="mt-2 fs-12 text-muted">Room: ' + (a.room_number || 'N/A') + ' | Rate: Rp ' + new Intl.NumberFormat('id-ID').format(a.room_rate) + '/bulan | ' + a.nights + ' malam (' + a.stay_type + ')</div>';
+                html += '<div class="mt-2 fs-12 text-muted">Room: ' + (a.room_number || 'N/A') + ' | Rate: Rp ' + new Intl.NumberFormat('id-ID').format(a.room_rate) + rateUnit + ' | ' + a.nights + ' malam (' + a.stay_type + ')</div>';
                 resultDiv.innerHTML = html;
                 return;
             }
@@ -2545,9 +2619,9 @@
             });
 
             html += '</tbody></table></div>';
-            html += '<div class="mt-3 fs-12 text-muted"><i class="ri-information-line me-1"></i>Room: ' + (a.room_number || 'N/A') + ' | Rate: Rp ' + new Intl.NumberFormat('id-ID').format(a.room_rate) + '/bulan | ' + a.nights + ' malam (' + a.stay_type + ')</div>';
+            html += '<div class="mt-3 fs-12 text-muted"><i class="ri-information-line me-1"></i>Room: ' + (a.room_number || 'N/A') + ' | Rate: Rp ' + new Intl.NumberFormat('id-ID').format(a.room_rate) + rateUnit + ' | ' + a.nights + ' malam (' + a.stay_type + ')</div>';
             resultDiv.innerHTML = html;
-            applyBtn.style.display = 'inline-block';
+            applyBtn.style.display = a.has_critical ? 'inline-block' : 'none';
         })
         .catch(err => {
             resultDiv.innerHTML = '<div class="alert alert-danger">Error: ' + err.message + '</div>';

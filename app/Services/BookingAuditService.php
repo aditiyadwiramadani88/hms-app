@@ -101,9 +101,9 @@ class BookingAuditService
     public function audit(Booking $booking): array
     {
         $anomalies = [];
-        $booking->load(['room.roomType', 'room.kostPricingTiers', 'transactions']);
+        $booking->load(['room.roomType', 'room.kostPricingTiers', 'transactions', 'roomTransfers']);
 
-        $nights = $booking->check_in->diffInDays($booking->check_out);
+        $nights = $booking->total_nights;
         $stayType = $booking->stay_type ?? 'daily';
 
         // === CHECK 1: Negative prices ===
@@ -372,9 +372,30 @@ class BookingAuditService
             return $yearlyPrice * $years;
         }
 
-        // Daily: expected = nightly rate for the tier that was actually applied
-        // (public/sales/high_season) × nights. Using price_public unconditionally
-        // falsely flagged every SALES booking (charged price_sales) as a mismatch.
+        // Daily:
+        // 1. If booking has room transfers, expected base price is the sum of nights in pricing_breakdown
+        if ($booking->roomTransfers()->exists() && is_array($booking->pricing_breakdown)) {
+            $breakdownSum = collect($booking->pricing_breakdown)
+                ->filter(fn ($v) => is_array($v) && isset($v['price']))
+                ->sum('price');
+            if ($breakdownSum > 0) {
+                return (float) $breakdownSum;
+            }
+        }
+
+        // 2. If booking has itemized breakdown (dynamic pricing / extension) matching base_price
+        if (is_array($booking->pricing_breakdown)) {
+            $breakdownEntries = collect($booking->pricing_breakdown)
+                ->filter(fn ($v) => is_array($v) && isset($v['price']));
+            if ($breakdownEntries->isNotEmpty()) {
+                $breakdownSum = (float) $breakdownEntries->sum('price');
+                if (abs($breakdownSum - (float) $booking->base_price) < 1) {
+                    return $breakdownSum;
+                }
+            }
+        }
+
+        // 3. Standard single-rate daily
         $nightlyRate = $this->nightlyRateForTier($booking, $room);
         return $nightlyRate * $nights;
     }
@@ -442,6 +463,12 @@ class BookingAuditService
 
         if (($booking->stay_type ?? 'daily') === 'monthly') {
             return (float) ($room->price_kos ?? $room->price_public ?? 0);
+        }
+        if (is_array($booking->pricing_breakdown)) {
+            $lastNight = collect($booking->pricing_breakdown)->filter(fn($v) => is_array($v) && isset($v['price']))->last();
+            if ($lastNight && isset($lastNight['price'])) {
+                return (float) $lastNight['price'];
+            }
         }
         return (float) ($room->price_public ?? $room->roomType->base_price ?? 0);
     }
