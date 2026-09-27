@@ -84,18 +84,48 @@ class NotificationController extends Controller
             return back()->with('error', 'Guest phone number not found.');
         }
 
+        $booking->load(['guest', 'room.roomType', 'hotel', 'posOrders', 'transactions']);
+
+        $manualExtraTotal = $booking->transactions
+            ->where('type', 'charge')
+            ->where('status', 'success')
+            ->whereNull('reference_id')
+            ->where('is_deposit', false)
+            ->sum('amount');
+        $posTotal = $booking->posOrders
+            ->where('status', 'completed')
+            ->sum('total_amount');
+        $grandTotal = $booking->total_price + $manualExtraTotal + $posTotal;
+        $totalPaid = $booking->transactions
+            ->where('type', 'payment')
+            ->where('status', 'success')
+            ->sum('amount');
+        $remainingBalance = max(0, $grandTotal - $totalPaid);
+
+        $roomName = $booking->room
+            ? $booking->room->room_number . ' (' . ($booking->room->roomType->name ?? '-') . ')'
+            : ($booking->custom_room_name ?? 'N/A');
+
         $hotelName = $booking->hotel->name ?? 'Our Homestay';
         $text = "*KONFIRMASI BOOKING - {$hotelName}*\n";
         $text .= "------------------------------------------\n";
         $text .= "Halo {$booking->guest->name},\n\n";
         $text .= "Terima kasih telah memesan di {$hotelName}. Berikut adalah rincian pesanan Anda:\n\n";
         $text .= "*Booking ID:* #{$booking->id}\n";
-        $text .= "*Kamar:* {$booking->room->room_number} ({$booking->room->roomType->name})\n";
-        $text .= "*Check-in:* " . $booking->check_in->format('d M Y') . "\n";
-        $text .= "*Check-out:* " . $booking->check_out->format('d M Y') . "\n";
-        $text .= "*Total Biaya:* Rp " . number_format($booking->total_price, 0, ',', '.') . "\n";
+        $text .= "*Kamar:* {$roomName}\n";
+        $text .= "*Check-in:* " . $booking->check_in->format('d M Y') . ($booking->check_in_time ? " ({$booking->check_in_time})" : '') . "\n";
+        $text .= "*Check-out:* " . $booking->check_out->format('d M Y') . ($booking->check_out_time ? " ({$booking->check_out_time})" : '') . "\n";
+        $text .= "*Durasi:* " . $booking->total_nights . " Malam\n";
         if ($booking->include_breakfast) {
             $text .= "*Sarapan:* Termasuk ✓\n";
+        }
+        $text .= "*Grand Total:* Rp " . number_format($grandTotal, 0, ',', '.') . "\n";
+        if ($totalPaid > 0) {
+            $text .= "*Sudah Dibayar (DP):* Rp " . number_format($totalPaid, 0, ',', '.') . "\n";
+            $text .= "*Sisa Tagihan:* Rp " . number_format($remainingBalance, 0, ',', '.') . "\n";
+            $text .= "*Status:* " . ($remainingBalance <= 0 ? 'LUNAS' : 'TERBAYAR SEBAGIAN (DP)') . "\n";
+        } else {
+            $text .= "*Status:* BELUM DIBAYAR\n";
         }
         $text .= "\nKami tunggu kedatangan Anda!\n";
         $text .= "------------------------------------------\n";
@@ -112,16 +142,45 @@ class NotificationController extends Controller
             return back()->with('error', 'Guest phone number not found.');
         }
 
+        $booking->load(['guest', 'room.roomType', 'hotel', 'posOrders', 'transactions']);
+
+        $manualExtraTotal = $booking->transactions
+            ->where('type', 'charge')
+            ->where('status', 'success')
+            ->whereNull('reference_id')
+            ->where('is_deposit', false)
+            ->sum('amount');
+        $posTotal = $booking->posOrders
+            ->where('status', 'completed')
+            ->sum('total_amount');
+        $grandTotal = $booking->total_price + $manualExtraTotal + $posTotal;
+        $totalPaid = $booking->transactions
+            ->where('type', 'payment')
+            ->where('status', 'success')
+            ->sum('amount');
+        $remainingBalance = max(0, $grandTotal - $totalPaid);
+
+        $roomName = $booking->room
+            ? $booking->room->room_number . ' (' . ($booking->room->roomType->name ?? '-') . ')'
+            : ($booking->custom_room_name ?? 'N/A');
+
         $hotelName = $booking->hotel->name ?? 'Our Homestay';
         $text = "*BUKTI PEMBAYARAN - {$hotelName}*\n";
         $text .= "------------------------------------------\n";
         $text .= "Halo {$booking->guest->name},\n\n";
         $text .= "Pembayaran Anda telah kami terima:\n\n";
-        $text .= "*Jumlah:* Rp " . number_format($transaction->amount, 0, ',', '.') . "\n";
+        $text .= "*Booking ID:* #{$booking->id}\n";
+        $text .= "*Kamar:* {$roomName}\n";
+        $text .= "*Jumlah Dibayar:* Rp " . number_format($transaction->amount, 0, ',', '.') . "\n";
         $text .= "*Metode:* " . ucfirst($transaction->payment_method) . "\n";
         $text .= "*Tanggal:* " . $transaction->created_at->format('d M Y, H:i') . "\n";
         $text .= "*Keterangan:* " . ($transaction->description ?? 'Pembayaran Booking') . "\n\n";
-        $text .= "Terima kasih!\n";
+        $text .= "------------------------------------------\n";
+        $text .= "*Total Tagihan:* Rp " . number_format($grandTotal, 0, ',', '.') . "\n";
+        $text .= "*Total Terbayar:* Rp " . number_format($totalPaid, 0, ',', '.') . "\n";
+        $text .= "*Sisa Tagihan:* Rp " . number_format($remainingBalance, 0, ',', '.') . "\n";
+        $text .= "*Status Pembayaran:* " . ($remainingBalance <= 0 ? 'LUNAS ✓' : 'BELUM LUNAS (Sisa Rp ' . number_format($remainingBalance, 0, ',', '.') . ')') . "\n\n";
+        $text .= "Terima kasih atas pembayaran Anda!\n";
         $text .= "------------------------------------------\n";
 
         if ($this->waService->sendMessage($booking->guest->phone, $text)) {
@@ -211,14 +270,77 @@ class NotificationController extends Controller
      */
     public function printBooking(Booking $booking)
     {
-        $booking->load(['guest', 'room.roomType', 'hotel']);
-        return view('notifications.print_booking', compact('booking'));
+        $booking->load(['guest', 'room.roomType', 'hotel', 'posOrders', 'transactions']);
+
+        $manualExtraTotal = $booking->transactions
+            ->where('type', 'charge')
+            ->where('status', 'success')
+            ->whereNull('reference_id')
+            ->where('is_deposit', false)
+            ->sum('amount');
+
+        $posTotal = $booking->posOrders
+            ->where('status', 'completed')
+            ->sum('total_amount');
+
+        $grandTotal = $booking->total_price + $manualExtraTotal + $posTotal;
+
+        $totalPaid = $booking->transactions
+            ->where('type', 'payment')
+            ->where('status', 'success')
+            ->sum('amount');
+
+        $remainingBalance = max(0, $grandTotal - $totalPaid);
+
+        return view('notifications.print_booking', compact(
+            'booking',
+            'manualExtraTotal',
+            'posTotal',
+            'grandTotal',
+            'totalPaid',
+            'remainingBalance'
+        ));
     }
 
     public function printPayment(Booking $booking, Transaction $transaction)
     {
-        $booking->load(['guest', 'room.roomType', 'hotel']);
-        return view('notifications.print_payment', compact('booking', 'transaction'));
+        $booking->load(['guest', 'room.roomType', 'hotel', 'posOrders', 'transactions']);
+
+        $manualExtraTotal = $booking->transactions
+            ->where('type', 'charge')
+            ->where('status', 'success')
+            ->whereNull('reference_id')
+            ->where('is_deposit', false)
+            ->sum('amount');
+
+        $posTotal = $booking->posOrders
+            ->where('status', 'completed')
+            ->sum('total_amount');
+
+        $depositCharges = $booking->transactions
+            ->where('type', 'charge')
+            ->where('is_deposit', true);
+        $totalDeposit = $depositCharges->sum('amount');
+        if ($totalDeposit <= 0 && ($booking->deposit_amount ?? 0) > 0) {
+            $totalDeposit = (float) $booking->deposit_amount;
+        }
+
+        $grandTotal = $booking->total_price + $manualExtraTotal + $posTotal;
+
+        $totalPaid = $booking->transactions
+            ->where('type', 'payment')
+            ->where('status', 'success')
+            ->sum('amount');
+
+        $remainingBalance = max(0, $grandTotal - $totalPaid);
+
+        return view('notifications.print_payment', compact(
+            'booking',
+            'transaction',
+            'grandTotal',
+            'totalPaid',
+            'remainingBalance'
+        ));
     }
 
     public function printCancel(Booking $booking)

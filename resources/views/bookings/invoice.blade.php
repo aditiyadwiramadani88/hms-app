@@ -200,28 +200,37 @@
         @endif
 
         <div class="totals">
+            @php
+                $depositToShow = ($showRoom && ($depositCharges ?? 0) > 0) ? $depositCharges : 0;
+                $displaySubtotal = isset($subtotalCharges) ? $subtotalCharges : max(0, $totalCharges - $depositToShow);
+            @endphp
             <div class="totals-row">
                 <span>Subtotal Charges:</span>
-                <span>Rp {{ number_format($totalCharges, 0, ',', '.') }}</span>
+                <span>Rp {{ number_format($displaySubtotal, 0, ',', '.') }}</span>
             </div>
-            @if(($booking->deposit_amount ?? 0) > 0)
+            @if($depositToShow > 0)
             <div class="totals-row">
                 <span>Security Deposit (Refundable):</span>
-                <span>Rp {{ number_format($booking->deposit_amount, 0, ',', '.') }}</span>
+                <span>Rp {{ number_format($depositToShow, 0, ',', '.') }}</span>
             </div>
             @endif
-            <div class="totals-row">
-                <span>Total Paid:</span>
-                <span>Rp {{ number_format($totalPaid, 0, ',', '.') }}</span>
-            </div>
             <div class="totals-row grand-total">
                 <span>Grand Total:</span>
                 <span>Rp {{ number_format($totalCharges, 0, ',', '.') }}</span>
+            </div>
+            <div class="totals-row">
+                <span>Total Paid:</span>
+                <span>Rp {{ number_format($totalPaid, 0, ',', '.') }}</span>
             </div>
             @if($balance > 0)
             <div class="totals-row balance">
                 <span>Remaining Balance:</span>
                 <span>Rp {{ number_format($balance, 0, ',', '.') }}</span>
+            </div>
+            @else
+            <div class="totals-row" style="color: #0ab39c; font-weight: bold;">
+                <span>Status:</span>
+                <span>LUNAS (PAID)</span>
             </div>
             @endif
         </div>

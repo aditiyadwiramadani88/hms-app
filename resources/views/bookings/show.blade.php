@@ -1128,30 +1128,11 @@
                             @endif
                             @endcan
 
-                            <div class="row g-2">
-                                @can('bookings.invoice')
-                                <div class="col-{{ $booking->status === 'checked_out' ? '12' : '6' }}">
-                                    <button type="button" class="btn btn-soft-info w-100" data-bs-toggle="modal" data-bs-target="#printInvoiceModal">
-                                        <i class="ri-printer-line align-bottom me-1"></i> Invoice
-                                    </button>
-                                </div>
-                                @endcan
-                                @can('bookings.send-wa')
-                                @if($booking->status !== 'checked_out' && $booking->status !== 'cancelled' && $booking->status !== 'no_show')
-                                <div class="col-6">
-                                    <form action="{{ route('bookings.send-wa', $booking->id) }}" method="POST" data-ajax="true" data-ajax-reload="true" data-ajax-close-modal="true" data-ajax-confirm="Are you sure?">
-                                        @csrf
-                                        <button type="submit" data-submit-protect="true" class="btn btn-soft-success w-100">WA</button>
-                                    </form>
-                                </div>
-                                @endif
-                                <div class="col-{{ $booking->status !== 'checked_out' && $booking->status !== 'cancelled' && $booking->status !== 'no_show' ? '6' : '12' }}">
-                                    <button type="button" class="btn btn-soft-warning w-100" onclick="copyWaTemplate()">
-                                        <i class="ri-clipboard-line me-1"></i> Copy WA
-                                    </button>
-                                </div>
-                                @endcan
-                            </div>
+                            @can('bookings.invoice')
+                            <button type="button" class="btn btn-soft-info w-100" data-bs-toggle="modal" data-bs-target="#printInvoiceModal">
+                                <i class="ri-printer-line align-bottom me-1"></i> Invoice
+                            </button>
+                            @endcan
 
                             @if($booking->status !== 'checked_out' && $booking->status !== 'cancelled' && $booking->status !== 'no_show')
                                 @can('bookings.edit.unlimited')

@@ -219,7 +219,7 @@
                 <p><span class="label">Room Type:</span> {{ $booking->room->roomType->name ?? 'N/A' }}</p>
                 <p><span class="label">Check-in:</span> <span class="value">{{ $booking->check_in ? $booking->check_in->format('d M Y') : 'N/A' }}</span></p>
                 <p><span class="label">Check-out:</span> <span class="value">{{ $booking->check_out ? $booking->check_out->format('d M Y') : 'N/A' }}</span></p>
-                <p><span class="label">Nights:</span> {{ $booking->nights ?? 'N/A' }}</p>
+                <p><span class="label">Nights:</span> {{ $booking->total_nights }}</p>
             </div>
             <div class="info-block">
                 <h3>Payment Status</h3>
@@ -252,19 +252,31 @@
             </tr>
         </thead>
         <tbody>
+            @php
+                $nights = max(1, (int)$booking->total_nights);
+                $roomRate = (float)($booking->base_price / $nights);
+            @endphp
             <tr>
                 <td>1</td>
                 <td>
                     <strong>Room Charge - {{ $booking->room->room_number ?? 'N/A' }}</strong><br>
                     <span style="color: #666; font-size: 11px;">{{ $booking->room->roomType->name ?? '' }}</span>
                 </td>
-                <td class="text-center">{{ $booking->nights ?? 0 }}</td>
-                <td class="text-right">{{ number_format($booking->room->price_override ?? $booking->room->roomType->base_price ?? 0, 2) }}</td>
-                <td class="text-right">{{ number_format($booking->subtotal ?? 0, 2) }}</td>
+                <td class="text-center">{{ $nights }}</td>
+                <td class="text-right">{{ number_format($roomRate, 2) }}</td>
+                <td class="text-right">{{ number_format($booking->base_price, 2) }}</td>
             </tr>
             @php
-                $posSum = $booking->posOrders->sum('total_amount') ?? 0;
+                $posSum = $booking->posOrders->where('status', 'completed')->sum('total_amount') ?? 0;
                 $extraSum = $booking->transactions->where('type', 'charge')->where('is_deposit', false)->whereNull('reference_id')->sum('amount') ?? 0;
+                $depositSum = $booking->transactions->where('type', 'charge')->where('is_deposit', true)->sum('amount');
+                if ($depositSum <= 0 && ($booking->deposit_amount ?? 0) > 0) {
+                    $depositSum = (float) $booking->deposit_amount;
+                }
+                $calculatedGrandTotal = (float)($booking->total_price ?? 0) + $posSum + $extraSum;
+                $successfulPayments = $booking->transactions->where('type', 'payment')->where('status', 'success');
+                $calculatedTotalPaid = $successfulPayments->sum('amount');
+                $calculatedBalanceDue = max(0, $calculatedGrandTotal - $calculatedTotalPaid);
             @endphp
             @if($posSum > 0)
             <tr>
@@ -289,6 +301,17 @@
                 <td class="text-right">{{ number_format($extraSum, 2) }}</td>
             </tr>
             @endif
+            @if($depositSum > 0)
+            <tr>
+                <td>{{ ($posSum > 0 && $extraSum > 0) ? 4 : (($posSum > 0 || $extraSum > 0) ? 3 : 2) }}</td>
+                <td>
+                    <strong>Security Deposit (Refundable)</strong>
+                </td>
+                <td class="text-center">1</td>
+                <td class="text-right">{{ number_format($depositSum, 2) }}</td>
+                <td class="text-right">{{ number_format($depositSum, 2) }}</td>
+            </tr>
+            @endif
         </tbody>
     </table>
 
@@ -296,28 +319,34 @@
     <table class="totals-table">
         <tr>
             <td>Subtotal</td>
-            <td class="text-right">{{ number_format($booking->subtotal ?? 0, 2) }}</td>
+            <td class="text-right">{{ number_format($booking->base_price + $posSum + $extraSum, 2) }}</td>
         </tr>
-        @if($booking->discount_amount ?? 0 > 0)
+        @if($depositSum > 0)
         <tr>
-            <td>Discount @if($booking->voucher_code)({{ $booking->voucher_code }})@endif</td>
-            <td class="text-right" style="color: #065f46;">- {{ number_format($booking->discount_amount ?? 0, 2) }}</td>
+            <td>Security Deposit</td>
+            <td class="text-right">{{ number_format($depositSum, 2) }}</td>
         </tr>
         @endif
-        @if($booking->tax_amount ?? 0 > 0)
+        @if(($booking->discount_amount ?? 0) > 0)
+        <tr>
+            <td>Discount @if($booking->voucher_code)({{ $booking->voucher_code }})@endif</td>
+            <td class="text-right" style="color: #065f46;">- {{ number_format($booking->discount_amount, 2) }}</td>
+        </tr>
+        @endif
+        @if(($booking->tax_amount ?? 0) > 0)
         <tr>
             <td>Tax</td>
-            <td class="text-right">{{ number_format($booking->tax_amount ?? 0, 2) }}</td>
+            <td class="text-right">{{ number_format($booking->tax_amount, 2) }}</td>
         </tr>
         @endif
         <tr class="total-row">
             <td>Total Amount</td>
-            <td class="text-right">{{ number_format(($booking->total_price ?? 0) + $posSum + $extraSum, 2) }}</td>
+            <td class="text-right">{{ number_format($calculatedGrandTotal, 2) }}</td>
         </tr>
     </table>
 
     {{-- Payment History --}}
-    @if(count($booking->transactions ?? []) > 0)
+    @if($successfulPayments->count() > 0)
     <div class="payment-history">
         <h3>Payment History</h3>
         <table>
@@ -331,23 +360,23 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach($booking->transactions ?? [] as $transaction)
+                @foreach($successfulPayments as $transaction)
                 <tr>
                     <td>{{ $transaction->created_at ? $transaction->created_at->format('d M Y, H:i') : 'N/A' }}</td>
                     <td>{{ ucfirst($transaction->payment_method ?? 'N/A') }}</td>
-                    <td>{{ $transaction->reference ?? '-' }}</td>
+                    <td>{{ $transaction->reference_id ?? '-' }}</td>
                     <td class="text-right">{{ number_format($transaction->amount ?? 0, 2) }}</td>
                     <td class="text-center">{{ ucfirst($transaction->status ?? 'N/A') }}</td>
                 </tr>
                 @endforeach
                 <tr style="background-color: #f9fafb;">
                     <td colspan="3" class="text-right"><strong>Total Paid:</strong></td>
-                    <td class="text-right" style="color: #065f46;"><strong>{{ number_format($booking->total_paid ?? 0, 2) }}</strong></td>
+                    <td class="text-right" style="color: #065f46;"><strong>{{ number_format($calculatedTotalPaid, 2) }}</strong></td>
                     <td></td>
                 </tr>
                 <tr style="background-color: #f9fafb;">
                     <td colspan="3" class="text-right"><strong>Balance Due:</strong></td>
-                    <td class="text-right" style="color: #991b1b;"><strong>{{ number_format(($booking->total_price ?? 0) + $posSum + $extraSum - ($booking->total_paid ?? 0), 2) }}</strong></td>
+                    <td class="text-right" style="color: #991b1b;"><strong>{{ number_format($calculatedBalanceDue, 2) }}</strong></td>
                     <td></td>
                 </tr>
             </tbody>

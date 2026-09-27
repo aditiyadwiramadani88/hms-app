@@ -2297,15 +2297,22 @@ class BookingController extends Controller
             $fakeP->payment_method = "cash";
             $fakeP->created_at = $booking->created_at;
             $displayPayments->push($fakeP);
+        }        // 4. Calculate display totals based on view filters
+        $depositCharges = $showRoom
+            ? $booking->transactions->where("type", "charge")->where("is_deposit", true)->sum("amount")
+            : 0;
+        if ($showRoom && $depositCharges <= 0 && ($booking->deposit_amount ?? 0) > 0) {
+            $depositCharges = (float) $booking->deposit_amount;
         }
 
-        // 4. Calculate display totals based on view filters
         $baseTotal = $showRoom ? $booking->total_price + $roomMarkupTotal : 0;
         $totalCharges =
             $baseTotal +
             $extraCharges->sum("amount") +
             $posOrders->sum("total_amount") +
-            $booking->transactions->where("type", "charge")->where("is_deposit", true)->sum("amount");
+            $depositCharges;
+
+        $subtotalCharges = max(0, $totalCharges - $depositCharges);
 
         // 5. Cap display payments to match shown charges (prevent showing overpaid)
         $payments = collect();
@@ -2340,12 +2347,14 @@ class BookingController extends Controller
                 "posOrders",
                 "payments",
                 "totalCharges",
+                "subtotalCharges",
+                "depositCharges",
                 "totalPaid",
                 "balance",
                 "showRoom",
                 "showExtra",
                 "showPos",
-                "roomMarkupTotal",
+                "roomMarkupTotal"
             ),
         );
     }
