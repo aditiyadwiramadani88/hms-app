@@ -35,25 +35,29 @@
 
 <div class="attendance-card">
     {{-- Shift Info --}}
-    @if($schedule && $schedule->shift)
+    @php
+        $displayShift = ($todayAttendance && $todayAttendance->shift) ? $todayAttendance->shift : ($schedule ? $schedule->shift : null);
+        $displaySchedule = $schedule ?? ($todayAttendance ? $todayAttendance->schedule : null);
+    @endphp
+    @if($displayShift)
     <div class="card mb-3">
         <div class="card-body">
             <div class="d-flex align-items-center gap-3">
                 <div class="flex-shrink-0">
-                    <span class="avatar-sm d-flex align-items-center justify-content-center rounded-circle" style="background: {{ $schedule->shift->color }}20; color: {{ $schedule->shift->color }}">
+                    <span class="avatar-sm d-flex align-items-center justify-content-center rounded-circle" style="background: {{ $displayShift->color ?? '#405189' }}20; color: {{ $displayShift->color ?? '#405189' }}">
                         <i class="ri-time-line fs-20"></i>
                     </span>
                 </div>
                 <div>
-                    <h6 class="mb-1">{{ $schedule->shift->name }}</h6>
+                    <h6 class="mb-1">{{ $displayShift->name }}</h6>
                     <p class="mb-0 text-muted small">
                         <i class="ri-clock-line me-1"></i>
-                        {{ \Carbon\Carbon::parse($schedule->shift->start_time)->format('H:i') }} - {{ \Carbon\Carbon::parse($schedule->shift->end_time)->format('H:i') }}
-                        @if($schedule->shift->start_time_2 && $schedule->shift->end_time_2)
-                        <br><i class="ri-history-line me-1"></i> Shift 2: {{ \Carbon\Carbon::parse($schedule->shift->start_time_2)->format('H:i') }} - {{ \Carbon\Carbon::parse($schedule->shift->end_time_2)->format('H:i') }}
+                        {{ \Carbon\Carbon::parse($displayShift->start_time)->format('H:i') }} - {{ \Carbon\Carbon::parse($displayShift->end_time)->format('H:i') }}
+                        @if($displayShift->start_time_2 && $displayShift->end_time_2)
+                        <br><i class="ri-history-line me-1"></i> Shift 2: {{ \Carbon\Carbon::parse($displayShift->start_time_2)->format('H:i') }} - {{ \Carbon\Carbon::parse($displayShift->end_time_2)->format('H:i') }}
                         @endif
-                        @if($schedule->location)
-                        &middot; <i class="ri-map-pin-line me-1"></i>{{ $schedule->location }}
+                        @if($displaySchedule && $displaySchedule->location)
+                        &middot; <i class="ri-map-pin-line me-1"></i>{{ $displaySchedule->location }}
                         @endif
                     </p>
                 </div>
@@ -139,7 +143,7 @@
             @endif
 
             {{-- Camera + GPS + Action Buttons --}}
-            @if($schedule && $schedule->shift && (!$todayAttendance || ($todayAttendance->check_in_time && !$todayAttendance->check_out_time)))
+            @if(($schedule && $schedule->shift && !$todayAttendance) || ($todayAttendance && $todayAttendance->check_in_time && !$todayAttendance->check_out_time))
             <div class="mt-3">
                 <div class="camera-container mb-3" id="cameraContainer">
                     <video id="cameraPreview" autoplay playsinline></video>
@@ -164,7 +168,7 @@
                 @endif
 
                 @if($todayAttendance && $todayAttendance->check_in_time && !$todayAttendance->check_out_time)
-                    @php $isSplit = $schedule->shift->start_time_2 && $schedule->shift->end_time_2; @endphp
+                    @php $isSplit = ($schedule && $schedule->shift && $schedule->shift->start_time_2 && $schedule->shift->end_time_2); @endphp
                     @if(!$todayAttendance->break_start_time)
                         <div class="d-flex gap-2">
                             <button type="button" class="btn btn-warning btn-checkin" id="btnBreakStart" onclick="doBreakStart()">

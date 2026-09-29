@@ -24,6 +24,21 @@ class AuditLog extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function getDescriptionAttribute($value)
+    {
+        if ($value && str_contains($value, 'User #')) {
+            static $cachedUsers = [];
+            return preg_replace_callback('/User #(\d+)/', function ($matches) use (&$cachedUsers) {
+                $userId = $matches[1];
+                if (!array_key_exists($userId, $cachedUsers)) {
+                    $cachedUsers[$userId] = User::find($userId)?->name;
+                }
+                return $cachedUsers[$userId] ?: $matches[0];
+            }, $value);
+        }
+        return $value;
+    }
+
     public static function log($action, $description, $model = null)
     {
         return static::create([

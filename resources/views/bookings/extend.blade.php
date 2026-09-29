@@ -4,6 +4,7 @@
 @endsection
 @section('css')
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    <link href="{{ URL::asset('build/libs/sweetalert2/sweetalert2.min.css') }}" rel="stylesheet" type="text/css" />
 @endsection
 @section('content')
     @component('components.breadcrumb')
@@ -89,9 +90,9 @@
                     @endif
 
                     @if(!empty($isBlocked) && $isBlocked)
-                        <div class="alert alert-danger">
+                        <div class="alert alert-danger" id="alert-room-blocked">
                             <i class="ri-error-warning-line me-2"></i>
-                            <strong>Kamar Tidak Dapat Diperpanjang:</strong> Kamar ini sudah dipesan oleh reservasi lain (#{{ $nextBooking->id }} - {{ $nextBooking->guest?->name ?? 'Tamu' }}) mulai tanggal <strong>{{ $booking->check_out->format('d M Y') }}</strong>.
+                            <strong>Kamar Tidak Dapat Diperpanjang:</strong> Kamar ini sudah ada booking lain (#{{ $nextBooking->id }} - {{ $nextBooking->guest?->name ?? 'Tamu' }}) mulai tanggal <strong>{{ $nextBooking->check_in->format('d M Y') }}</strong>.
                             <div class="mt-2">
                                 <a href="{{ route('bookings.show', $booking->id) }}" class="btn btn-sm btn-primary">
                                     <i class="ri-arrow-left-line me-1"></i> Buka Booking & Pindah Kamar
@@ -119,6 +120,24 @@
                                     Maksimal s/d {{ \Carbon\Carbon::parse($maxNewCheckOut)->format('d M Y') }}
                                 @else
                                     Pilih tanggal check-out baru untuk melihat rincian biaya perpanjangan
+                                @endif
+                            </div>
+                        </div>
+
+                        {{-- Toggle Include Breakfast --}}
+                        <div class="mb-3">
+                            <div class="form-check form-switch form-switch-md">
+                                <input class="form-check-input" type="checkbox" name="include_breakfast" id="include_breakfast" value="1"
+                                       {{ old('include_breakfast', $booking->include_breakfast) ? 'checked' : '' }}
+                                       {{ !empty($isBlocked) && $isBlocked ? 'disabled' : '' }}>
+                                <label class="form-check-label fw-semibold" for="include_breakfast">
+                                    Include Breakfast
+                                </label>
+                            </div>
+                            <div class="form-text">
+                                Centang jika hari perpanjangan menginap termasuk sarapan
+                                @if(!empty($breakfastRatePerNight) && $breakfastRatePerNight > 0)
+                                    (Rp {{ number_format($breakfastRatePerNight, 0, ',', '.') }}/malam)
                                 @endif
                             </div>
                         </div>
@@ -191,13 +210,12 @@
                 </div>
                 <div class="card-body">
                     <ul class="list-unstyled mb-0">
-                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Rincian subtotal akan otomatis dihitung saat memilih tanggal check-out baru.</li>
-                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Total tagihan (Grand Total) dan invoice akan langsung diperbarui setelah disimpan.</li>
-                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Untuk harian, tarif malam dihitung berdasarkan rata-rata tarif kamar booking awal.</li>
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Rincian subtotal akan otomatis dihitung saat memilih tanggal check-out baru atau mengubah opsi sarapan.</li>
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Toggle <strong>Include Breakfast</strong> dapat diaktifkan jika ingin menambahkan paket sarapan selama perpanjangan menginap.</li>
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Sistem memvalidasi ketersediaan kamar secara otomatis. Jika sudah ada reservasi lain pada rentang tanggal tersebut, perpanjangan tidak dapat diproses.</li>
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Total tagihan (Grand Total) dan invoice akan langsung diperbarui setelah perpanjangan disimpan.</li>
+                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Untuk harian, tarif malam dihitung berdasarkan tarif kamar booking awal.</li>
                         <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Untuk bulanan (kost), tarif perpanjangan dihitung secara prorata harian (harga kost / 30 hari).</li>
-                        @if($booking->include_breakfast)
-                        <li class="mb-2"><i class="ri-check-double-line text-success me-2"></i> Booking ini menyertakan sarapan, sehingga biaya sarapan otomatis dihitung untuk hari perpanjangan.</li>
-                        @endif
                         <li class="mb-0"><i class="ri-check-double-line text-success me-2"></i> Perubahan ini akan mencatat periode inap baru secara otomatis di invoice.</li>
                     </ul>
                 </div>
@@ -207,6 +225,7 @@
 @endsection
 @section('script')
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <script src="{{ URL::asset('build/libs/sweetalert2/sweetalert2.min.js') }}"></script>
     <script>
         @if(session('success'))
             Toastify({ text: "{{ session('success') }}", duration: 5000, gravity: "top", position: "right", style: { background: "#0ab39c" } }).showToast();
@@ -215,11 +234,26 @@
             Toastify({ text: "{{ session('error') }}", duration: 5000, gravity: "top", position: "right", style: { background: "#f06548" } }).showToast();
         @endif
 
+        @if(!empty($isBlocked) && $isBlocked)
+            document.addEventListener('DOMContentLoaded', function() {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Tidak Bisa Diperpanjang',
+                        html: 'Kamar ini sudah ada booking lain (#{{ $nextBooking->id }} - {{ $nextBooking->guest?->name ?? "Tamu" }}) mulai tanggal <strong>{{ $nextBooking->check_in->format("d M Y") }}</strong>.<br><br>Kamar <strong>tidak bisa diperpanjang</strong>. Silakan gunakan fitur <strong>Pindah Kamar (Room Transfer)</strong>.',
+                        confirmButtonText: 'Tutup',
+                        confirmButtonColor: '#f06548'
+                    });
+                }
+            });
+        @endif
+
         function formatRupiah(num) {
             return 'Rp ' + Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
         }
 
         const inputNewCheckout = document.getElementById('new_check_out');
+        const inputBreakfast = document.getElementById('include_breakfast');
         const previewBox = document.getElementById('extend_preview_box');
         const previewLoading = document.getElementById('extend_preview_loading');
         const previewError = document.getElementById('extend_preview_error');
@@ -228,9 +262,12 @@
         function fetchExtendPreview() {
             if (!inputNewCheckout) return;
             const val = inputNewCheckout.value;
+            const isBreakfast = inputBreakfast && inputBreakfast.checked ? 1 : 0;
+
             if (!val) {
                 previewBox.style.display = 'none';
                 previewError.style.display = 'none';
+                inputNewCheckout.classList.remove('is-invalid');
                 return;
             }
 
@@ -238,17 +275,30 @@
             previewBox.style.display = 'none';
             previewError.style.display = 'none';
 
-            fetch(`{{ route('bookings.extend.preview', $booking->id) }}?new_check_out=${val}`)
+            fetch(`{{ route('bookings.extend.preview', $booking->id) }}?new_check_out=${val}&include_breakfast=${isBreakfast}`)
                 .then(res => res.json())
                 .then(res => {
                     previewLoading.style.display = 'none';
                     if (!res.success) {
-                        previewError.textContent = res.message || 'Gagal menghitung biaya perpanjangan.';
+                        inputNewCheckout.classList.add('is-invalid');
+                        const errorMsg = res.message || 'Kamar sudah ada booking pada tanggal tersebut, tidak bisa diperpanjang.';
+                        previewError.innerHTML = '<i class="ri-error-warning-line me-1"></i> ' + errorMsg;
                         previewError.style.display = 'block';
                         if (submitBtn) submitBtn.disabled = true;
+
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Tidak Bisa Diperpanjang',
+                                text: errorMsg,
+                                confirmButtonText: 'Tutup',
+                                confirmButtonColor: '#f06548'
+                            });
+                        }
                         return;
                     }
 
+                    inputNewCheckout.classList.remove('is-invalid');
                     const d = res.data;
                     document.getElementById('prev_additional_days').textContent = d.additional_days + (d.stay_type === 'monthly' ? ' hari' : ' malam');
                     document.getElementById('prev_room_cost').textContent = formatRupiah(d.room_additional_cost);
@@ -286,6 +336,31 @@
             if (inputNewCheckout.value) {
                 fetchExtendPreview();
             }
+        }
+
+        if (inputBreakfast) {
+            inputBreakfast.addEventListener('change', fetchExtendPreview);
+        }
+
+        // Form submit safety check
+        const formExtend = document.querySelector('form[action*="extend"]');
+        if (formExtend) {
+            formExtend.addEventListener('submit', function(e) {
+                if (inputNewCheckout && inputNewCheckout.classList.contains('is-invalid')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Tidak Bisa Diperpanjang',
+                            text: 'Kamar sudah ada booking pada tanggal tersebut, tidak bisa diperpanjang.',
+                            confirmButtonText: 'Tutup',
+                            confirmButtonColor: '#f06548'
+                        });
+                    }
+                    return false;
+                }
+            });
         }
     </script>
 @endsection

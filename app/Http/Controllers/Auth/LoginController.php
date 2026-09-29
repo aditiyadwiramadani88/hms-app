@@ -118,6 +118,44 @@ class LoginController extends Controller
 
         if ($isOperational) {
             $today = now()->format('Y-m-d');
+            $yesterday = \Carbon\Carbon::parse($today)->subDay()->format('Y-m-d');
+
+            // 1. NEVER auto clock-in if employee has an unclosed shift from yesterday
+            // (e.g. overnight shift waiting for morning checkout)
+            $hasUnclosedYesterday = Attendance::where('employee_id', $user->id)
+                ->where('attendance_date', $yesterday)
+                ->whereNotNull('check_in_time')
+                ->whereNull('check_out_time')
+                ->exists();
+
+            if ($hasUnclosedYesterday) {
+                return;
+            }
+
+            // 2. Check today's schedule if exists
+            $schedule = \App\Models\EmployeeSchedule::with('shift')
+                ->where('employee_id', $user->id)
+                ->where('schedule_date', $today)
+                ->first();
+
+            if ($schedule) {
+                if (!$schedule->shift || $schedule->shift->is_off) {
+                    return; // Day off
+                }
+
+                $shift = $schedule->shift;
+                $shiftStart = \Carbon\Carbon::parse($today . ' ' . $shift->start_time)->subHours(2);
+                $shiftEnd = \Carbon\Carbon::parse($today . ' ' . $shift->end_time)->addHours(2);
+                if ($shiftEnd <= $shiftStart) {
+                    $shiftEnd->addDay();
+                }
+
+                // Do not auto clock-in hours before or after their shift!
+                if (!now()->between($shiftStart, $shiftEnd)) {
+                    return;
+                }
+            }
+
             $alreadyClockedIn = Attendance::where('employee_id', $user->id)
                 ->whereDate('attendance_date', $today)
                 ->exists();
@@ -127,6 +165,8 @@ class LoginController extends Controller
                     Attendance::create([
                         'hotel_id' => active_hotel_id(),
                         'employee_id' => $user->id,
+                        'employee_schedule_id' => $schedule?->id,
+                        'shift_id' => $schedule?->shift_id,
                         'attendance_date' => $today,
                         'check_in_time' => now(),
                         'status' => 'present',

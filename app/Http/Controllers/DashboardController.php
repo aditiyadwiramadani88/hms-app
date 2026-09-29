@@ -151,9 +151,10 @@ class DashboardController extends Controller
             ->where('status', 'checked_in')
             ->sum(DB::raw('COALESCE(adults, 1) + COALESCE(children, 0)'));
 
-        $recentActivities = \App\Models\AuditLog::where('hotel_id', active_hotel_id())
+        $recentActivities = \App\Models\AuditLog::with('user')
+            ->where('hotel_id', active_hotel_id())
             ->latest()
-            ->take(6)
+            ->take(10)
             ->get();
 
         // Occupancy Chart Data (Last 7 Days) — actual check-in/out, not booking status

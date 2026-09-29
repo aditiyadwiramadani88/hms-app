@@ -26,27 +26,73 @@ class AttendanceController extends Controller
 
         $todayAttendance = $this->attendanceService->getTodayStatus($user->id);
 
-        // If no attendance today, carry over an open shift from yesterday ONLY if it's
-        // a genuine overnight shift still within its window (e.g. 21:00-07:00, checked
-        // in last night, still before 07:00 today). A day shift or a lapsed overnight
-        // shift left open must NOT "connect" into today's schedule/duration -- that
-        // was making a missed checkout look like a still-ongoing shift indefinitely.
-        if (!$todayAttendance) {
-            $yesterdayAttendance = \App\Models\Attendance::where('employee_id', $user->id)
-                ->where('attendance_date', $yesterday)
-                ->whereNotNull('check_in_time')
-                ->whereNull('check_out_time')
-                ->with('shift')
-                ->first();
+        $now = now();
+        $isYesterdayActive = false;
 
-            if ($yesterdayAttendance && $yesterdayAttendance->shift) {
-                $shift = $yesterdayAttendance->shift;
-                $isOvernight = $shift->end_time && $shift->start_time && $shift->end_time < $shift->start_time;
-                $shiftEndToday = $isOvernight ? Carbon::parse($today . ' ' . $shift->end_time) : null;
+        // Check if employee has a scheduled shift today (to know when the next shift starts)
+        $todaySchedule = \App\Models\EmployeeSchedule::where('employee_id', $user->id)
+            ->where('schedule_date', $today)
+            ->with('shift')
+            ->whereHas('shift', function ($q) {
+                $q->where('is_off', false);
+            })
+            ->first();
 
-                if ($isOvernight && now()->lt($shiftEndToday)) {
-                    $todayAttendance = $yesterdayAttendance;
-                    $today = $yesterday; // Show yesterday's schedule as active
+        $todayShiftStartWindow = null;
+        if ($todaySchedule && $todaySchedule->shift) {
+            $todayShiftStartWindow = Carbon::parse($today . ' ' . $todaySchedule->shift->start_time)->subHours(2);
+        }
+
+        // Check if employee has an unclosed attendance from yesterday
+        $yesterdayAttendance = \App\Models\Attendance::where('employee_id', $user->id)
+            ->where('attendance_date', $yesterday)
+            ->whereNotNull('check_in_time')
+            ->whereNull('check_out_time')
+            ->with(['shift', 'schedule.shift'])
+            ->first();
+
+        if ($yesterdayAttendance) {
+            $hoursSinceCheckin = $yesterdayAttendance->check_in_time ? $yesterdayAttendance->check_in_time->diffInHours($now) : 0;
+            $nextShiftStarted = $todayShiftStartWindow && $now->gte($todayShiftStartWindow);
+
+            // Option 2: As long as the next scheduled shift has not arrived (and within 18 hours),
+            // keep yesterday's shift active for Check-Out!
+            if (!$nextShiftStarted && $hoursSinceCheckin <= 18) {
+                $isYesterdayActive = true;
+                $todayAttendance = $yesterdayAttendance;
+                $today = $yesterday; // Show yesterday's shift schedule as active for checkout
+            } elseif ($nextShiftStarted) {
+                // Next shift has arrived! Auto-close yesterday's unclosed attendance so it does not block today's shift
+                $yesterdayShift = $yesterdayAttendance->shift ?? $yesterdayAttendance->schedule?->shift;
+                $autoOut = $yesterdayAttendance->check_in_time->copy()->addHours(8);
+                if ($yesterdayShift) {
+                    $endTime = $yesterdayShift->end_time_2 ?: $yesterdayShift->end_time;
+                    $autoOut = Carbon::parse($yesterdayAttendance->attendance_date->format('Y-m-d') . ' ' . $endTime);
+                    if ($autoOut <= $yesterdayAttendance->check_in_time) {
+                        $autoOut->addDay();
+                    }
+                }
+                $yesterdayAttendance->update([
+                    'check_out_time' => $autoOut,
+                    'notes' => trim(($yesterdayAttendance->notes ?? '') . ' [Auto-closed by next shift start]'),
+                ]);
+            }
+        }
+
+        // If today has a completed checkout from morning, but employee has an active/upcoming shift later today
+        if (!$isYesterdayActive && $todayAttendance && $todayAttendance->check_out_time && $todaySchedule && $todaySchedule->shift) {
+            $shiftStart = Carbon::parse($today . ' ' . $todaySchedule->shift->start_time);
+            $coTime = Carbon::parse($todayAttendance->check_out_time);
+
+            // If morning checkout occurred before 13:00 and today's shift starts >= 15:00
+            if ($shiftStart->hour >= 15 && $coTime->hour < 13) {
+                $yesterdayExists = \App\Models\Attendance::where('employee_id', $user->id)
+                    ->where('attendance_date', $yesterday)
+                    ->exists();
+
+                if (!$yesterdayExists) {
+                    $todayAttendance->update(['attendance_date' => $yesterday]);
+                    $todayAttendance = null; // Free up today for tonight's shift
                 }
             }
         }
@@ -242,6 +288,7 @@ class AttendanceController extends Controller
     {
         $user = auth()->user();
         $today = now()->format('Y-m-d');
+        $yesterday = Carbon::parse($today)->subDay()->format('Y-m-d');
 
         $attendance = Attendance::where('employee_id', $user->id)
             ->where('attendance_date', $today)
@@ -249,7 +296,15 @@ class AttendanceController extends Controller
             ->first();
 
         if (!$attendance) {
-            return $this->ajaxError('Tidak ada data checkout hari ini yang bisa di-reset.');
+            // Also check yesterday's shift if checkout occurred recently
+            $attendance = Attendance::where('employee_id', $user->id)
+                ->where('attendance_date', $yesterday)
+                ->whereNotNull('check_out_time')
+                ->first();
+        }
+
+        if (!$attendance) {
+            return $this->ajaxError('Tidak ada data checkout yang bisa di-reset.');
         }
 
         $attendance->update([

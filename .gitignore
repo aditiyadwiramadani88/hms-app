@@ -59,3 +59,5 @@ tests/Unit/BookingExtensionExecutionTest.php
 tests/Unit/BookingLifecycleAndCheckoutTest.php
 tests/Unit/RoomAvailabilityConflictTest.php
 tests/Unit/PrintReceiptAndInvoiceAccuracyTest.php
+tests/Unit/GuestTableSortingTest.php
+tests/Unit/OvernightShiftAttendanceTest.php

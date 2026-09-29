@@ -374,10 +374,10 @@
         </div>
     </div>
 
-    {{-- Third Row: Chart & Activity --}}
+    {{-- Third Row: Occupancy Overview Chart --}}
     <div class="row">
-        <div class="col-xl-8">
-            <div class="card card-height-100">
+        <div class="col-12">
+            <div class="card">
                 <div class="card-header align-items-center d-flex">
                     <h4 class="card-title mb-0 flex-grow-1">Occupancy Overview (Last 7 Days)</h4>
                 </div>
@@ -386,103 +386,73 @@
                 </div>
             </div>
         </div>
-        <div class="col-xl-4">
-            <div class="card card-height-100">
-                <div class="card-header align-items-center d-flex">
-                    <h4 class="card-title mb-0 flex-grow-1">Recent Activity</h4>
-                </div>
-                <div class="card-body">
-                    <div class="acitivity-timeline">
-                        @forelse($recentActivities as $activity)
-                        <div class="acitivity-item d-flex mb-3">
-                            <div class="flex-shrink-0 avatar-xs acitivity-avatar">
-                                <span class="avatar-title bg-{{ 
-                                    str_contains($activity->action, 'created') ? 'success' : 
-                                    (str_contains($activity->action, 'deleted') ? 'danger' : 'info') 
-                                }}-subtle text-{{ 
-                                    str_contains($activity->action, 'created') ? 'success' : 
-                                    (str_contains($activity->action, 'deleted') ? 'danger' : 'info') 
-                                }} rounded-circle">
-                                    <i class="{{ 
-                                        str_contains($activity->action, 'room') ? 'ri-hotel-bed-line' : 
-                                        (str_contains($activity->action, 'payment') ? 'ri-money-dollar-circle-line' : 'ri-notification-3-line') 
-                                    }}"></i>
-                                </span>
-                            </div>
-                            <div class="flex-grow-1 ms-3">
-                                <h6 class="mb-1">{{ ucwords(str_replace(['.', '_'], ' ', $activity->action)) }}</h6>
-                                <p class="text-muted mb-1 fs-12">{{ Str::limit($activity->description, 60) }}</p>
-                                <small class="text-muted text-uppercase">{{ $activity->created_at->diffForHumans() }}</small>
-                            </div>
-                        </div>
-                        @empty
-                        <div class="text-center text-muted py-3">No recent activities</div>
-                        @endforelse
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 
-    {{-- Fourth Row: Table --}}
+    {{-- Fourth Row: Recent Activity Table --}}
     <div class="row">
-        <div class="col-lg-12">
+        <div class="col-12">
             <div class="card">
                 <div class="card-header border-bottom-dashed align-items-center d-flex">
-                    <h4 class="card-title mb-0 flex-grow-1">Recent Bookings</h4>
-                    <div class="flex-shrink-0">
-                        <a href="{{ route('bookings.index') }}" class="btn btn-soft-primary btn-sm">View All</a>
-                    </div>
+                    <h4 class="card-title mb-0 flex-grow-1">
+                        <i class="ri-history-line me-2 text-primary"></i>Recent Activity
+                    </h4>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive table-card">
                         <table class="table table-nowrap align-middle table-borderless mb-0">
                             <thead class="table-light text-muted">
                                 <tr>
-                                    <th scope="col">Booking ID</th>
-                                    <th scope="col">Guest Name</th>
-                                    <th scope="col">Room Details</th>
-                                    <th scope="col">Stay Duration</th>
-                                    <th scope="col">Status</th>
-                                    <th scope="col" class="text-end">Amount</th>
+                                    <th scope="col" style="width: 50px;">#</th>
+                                    <th scope="col">User</th>
+                                    <th scope="col">Action</th>
+                                    <th scope="col">Description</th>
+                                    <th scope="col">IP Address</th>
+                                    <th scope="col" class="text-end">Time</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @forelse($recentBookings ?? [] as $booking)
+                                @forelse($recentActivities ?? [] as $activity)
                                 <tr>
-                                    <td><a href="{{ route('bookings.show', $booking->id) }}" class="fw-medium">#{{ $booking->id }}</a></td>
-                                    <td>{{ $booking->guest->name ?? 'N/A' }}</td>
                                     <td>
-                                        <div class="d-flex align-items-center">
-                                            <i class="ri-hotel-bed-line me-2 text-muted"></i>
-                                            <div>
-                                                <h6 class="mb-0 fs-13">{{ $booking->room->room_number ?? 'N/A' }}</h6>
-                                                <small class="text-muted">{{ $booking->room->roomType->name ?? '' }}</small>
-                                            </div>
+                                        <div class="avatar-xs">
+                                            <span class="avatar-title bg-{{ 
+                                                str_contains($activity->action, 'created') ? 'success' : 
+                                                (str_contains($activity->action, 'deleted') ? 'danger' : 'info') 
+                                            }}-subtle text-{{ 
+                                                str_contains($activity->action, 'created') ? 'success' : 
+                                                (str_contains($activity->action, 'deleted') ? 'danger' : 'info') 
+                                            }} rounded-circle">
+                                                <i class="{{ 
+                                                    str_contains($activity->action, 'room') ? 'ri-hotel-bed-line' : 
+                                                    (str_contains($activity->action, 'payment') ? 'ri-money-dollar-circle-line' : 'ri-notification-3-line') 
+                                                }}"></i>
+                                            </span>
                                         </div>
                                     </td>
                                     <td>
-                                        <div class="text-muted">
-                                            {{ $booking->check_in->format('d M') }} - {{ $booking->check_out->format('d M') }}<br>
-                                            <small>({{ $booking->check_in->diffInDays($booking->check_out) }} nights)</small>
-                                        </div>
+                                        <span class="fw-semibold text-dark">{{ $activity->user->name ?? 'System' }}</span>
                                     </td>
                                     <td>
-                                        <span class="badge bg-{{ 
-                                            $booking->status === 'confirmed' ? 'success' : 
-                                            ($booking->status === 'pending' ? 'warning' : 
-                                            ($booking->status === 'checked_in' ? 'info' : 'secondary')) 
-                                        }}-subtle text-{{ 
-                                            $booking->status === 'confirmed' ? 'success' : 
-                                            ($booking->status === 'pending' ? 'warning' : 
-                                            ($booking->status === 'checked_in' ? 'info' : 'secondary')) 
-                                        }} text-uppercase">{{ $booking->status }}</span>
+                                        <span class="badge bg-light text-dark border">
+                                            {{ ucwords(str_replace(['.', '_'], ' ', $activity->action)) }}
+                                        </span>
                                     </td>
-                                    <td class="text-end fw-medium">Rp {{ number_format($booking->total_price ?? 0, 0, ',', '.') }}</td>
+                                    <td>
+                                        <span class="text-muted fs-13">{{ $activity->description }}</span>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted font-monospace">{{ $activity->ip_address ?? '-' }}</small>
+                                    </td>
+                                    <td class="text-end text-muted">
+                                        <span class="fs-12">{{ $activity->created_at->diffForHumans() }}</span>
+                                    </td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="6" class="text-center py-4">No recent bookings.</td>
+                                    <td colspan="6" class="text-center py-4 text-muted">
+                                        <i class="ri-history-line fs-24 d-block mb-1"></i>
+                                        No recent activities.
+                                    </td>
                                 </tr>
                                 @endforelse
                             </tbody>

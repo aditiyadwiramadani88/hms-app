@@ -750,7 +750,7 @@ class BookingService
             ->when(!$includeUnavailable, function ($q) use ($unavailableStatuses) {
                 return $q->whereNotIn('status', $unavailableStatuses);
             })
-            ->when($stayType === 'monthly', function ($q) {
+            ->when(in_array($stayType, ['monthly', 'yearly']), function ($q) {
                 return $q->where('is_kos', true);
             })
             ->with('roomType');

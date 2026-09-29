@@ -32,7 +32,9 @@
                 </div>
 
                 <div class="card-body bg-light-subtle border border-dashed border-start-0 border-end-0">
-                    <form action="{{ route('guests.index') }}" method="GET">
+                    <form action="{{ route('guests.index') }}" method="GET" id="guestFilterForm">
+                        <input type="hidden" name="sort_by" value="{{ request('sort_by', 'name') }}">
+                        <input type="hidden" name="sort_dir" value="{{ request('sort_dir', 'asc') }}">
                         <div class="row g-3">
                             <div class="col-xxl-3 col-sm-6">
                                 <div class="search-box">
@@ -74,22 +76,95 @@
                                 </div>
                             </div>
                         </div>
+
+                        {{-- Quick Sort Bar --}}
+                        <div class="row g-2 mt-2 align-items-center">
+                            <div class="col-auto">
+                                <span class="fs-12 text-muted fw-semibold"><i class="ri-sort-desc align-middle me-1"></i>Urutkan Data:</span>
+                            </div>
+                            <div class="col-auto">
+                                <select class="form-select form-select-sm" id="quickSortSelect" onchange="applyQuickSort(this.value)">
+                                    <option value="name_asc" {{ request('sort_by', 'name') === 'name' && request('sort_dir', 'asc') === 'asc' ? 'selected' : '' }}>Nama (A - Z)</option>
+                                    <option value="name_desc" {{ request('sort_by') === 'name' && request('sort_dir') === 'desc' ? 'selected' : '' }}>Nama (Z - A)</option>
+                                    <option value="created_at_desc" {{ request('sort_by') === 'created_at' && request('sort_dir', 'desc') === 'desc' ? 'selected' : '' }}>Terdaftar Terbaru</option>
+                                    <option value="created_at_asc" {{ request('sort_by') === 'created_at' && request('sort_dir') === 'asc' ? 'selected' : '' }}>Terdaftar Terlama</option>
+                                    <option value="bookings_desc" {{ request('sort_by') === 'bookings_count' && request('sort_dir') === 'desc' ? 'selected' : '' }}>Booking Terbanyak</option>
+                                    <option value="company_asc" {{ request('sort_by') === 'company_name' && request('sort_dir') === 'asc' ? 'selected' : '' }}>Perusahaan (A - Z)</option>
+                                    <option value="code_asc" {{ in_array(request('sort_by'), ['code', 'legacy_customer_code']) && request('sort_dir') === 'asc' ? 'selected' : '' }}>Kode Tamu (A - Z)</option>
+                                    <option value="phone_asc" {{ request('sort_by') === 'phone' ? 'selected' : '' }}>No. Telepon</option>
+                                    <option value="id_number_asc" {{ request('sort_by') === 'id_number' ? 'selected' : '' }}>No. Identitas</option>
+                                </select>
+                            </div>
+                        </div>
                     </form>
                 </div>
 
                 <div class="card-body">
+                    @php
+                        $currentSort = request('sort_by', 'name');
+                        $currentDir = request('sort_dir', 'asc');
+                    @endphp
                     <div class="table-responsive table-card">
                         <table class="table table-hover table-nowrap align-middle mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th class="ps-4">Guest Info</th>
-                                    <th>Contact</th>
-                                    <th>ID & WN</th>
-                                    <th>Category</th>
-                                    <th>Type & Company</th>
-                                    <th>Vehicle</th>
+                                    <th class="ps-4 text-nowrap" style="cursor: pointer;" onclick="sortByGuest('name')" title="Klik untuk mengurutkan Nama">
+                                        Guest Info
+                                        @if($currentSort === 'name')
+                                            <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill text-primary ms-1"></i>
+                                        @else
+                                            <i class="ri-arrow-up-down-line text-muted ms-1 fs-11"></i>
+                                        @endif
+                                    </th>
+                                    <th class="text-nowrap" style="cursor: pointer;" onclick="sortByGuest('phone')" title="Klik untuk mengurutkan Telepon">
+                                        Contact
+                                        @if($currentSort === 'phone')
+                                            <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill text-primary ms-1"></i>
+                                        @else
+                                            <i class="ri-arrow-up-down-line text-muted ms-1 fs-11"></i>
+                                        @endif
+                                    </th>
+                                    <th class="text-nowrap" style="cursor: pointer;" onclick="sortByGuest('id_number')" title="Klik untuk mengurutkan No. Identitas">
+                                        ID & WN
+                                        @if($currentSort === 'id_number')
+                                            <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill text-primary ms-1"></i>
+                                        @else
+                                            <i class="ri-arrow-up-down-line text-muted ms-1 fs-11"></i>
+                                        @endif
+                                    </th>
+                                    <th class="text-nowrap" style="cursor: pointer;" onclick="sortByGuest('category')" title="Klik untuk mengurutkan Kategori">
+                                        Category
+                                        @if($currentSort === 'category')
+                                            <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill text-primary ms-1"></i>
+                                        @else
+                                            <i class="ri-arrow-up-down-line text-muted ms-1 fs-11"></i>
+                                        @endif
+                                    </th>
+                                    <th class="text-nowrap" style="cursor: pointer;" onclick="sortByGuest('company_name')" title="Klik untuk mengurutkan Perusahaan">
+                                        Type & Company
+                                        @if($currentSort === 'company_name')
+                                            <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill text-primary ms-1"></i>
+                                        @else
+                                            <i class="ri-arrow-up-down-line text-muted ms-1 fs-11"></i>
+                                        @endif
+                                    </th>
+                                    <th class="text-nowrap" style="cursor: pointer;" onclick="sortByGuest('vehicle_number')" title="Klik untuk mengurutkan Plat Kendaraan">
+                                        Vehicle
+                                        @if($currentSort === 'vehicle_number')
+                                            <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill text-primary ms-1"></i>
+                                        @else
+                                            <i class="ri-arrow-up-down-line text-muted ms-1 fs-11"></i>
+                                        @endif
+                                    </th>
                                     <th>Address</th>
-                                    <th class="text-center">Bookings</th>
+                                    <th class="text-center text-nowrap" style="cursor: pointer;" onclick="sortByGuest('bookings_count')" title="Klik untuk mengurutkan Jumlah Booking">
+                                        Bookings
+                                        @if($currentSort === 'bookings_count')
+                                            <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill text-primary ms-1"></i>
+                                        @else
+                                            <i class="ri-arrow-up-down-line text-muted ms-1 fs-11"></i>
+                                        @endif
+                                    </th>
                                     <th class="text-center">Action</th>
                                 </tr>
                             </thead>
@@ -147,7 +222,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="8" class="text-center py-5">
+                                    <td colspan="9" class="text-center py-5">
                                         <lord-icon src="https://cdn.lordicon.com/vlyjqzno.json" trigger="loop" colors="primary:#405189,secondary:#0ab39c" style="width:75px;height:75px"></lord-icon>
                                         <h5 class="mt-2 text-muted">No guests found matching your criteria.</h5>
                                     </td>
@@ -207,6 +282,41 @@
             document.getElementById('deleteGuestName').textContent = guestName;
             document.getElementById('deleteGuestForm').action = '{{ route("guests.destroy", ":id") }}'.replace(':id', guestId);
             new bootstrap.Modal(document.getElementById('deleteGuestModal')).show();
+        }
+
+        function sortByGuest(column) {
+            const currentSort = '{{ $currentSort }}';
+            const currentDir = '{{ $currentDir }}';
+            let newDir = 'asc';
+            if (currentSort === column && currentDir === 'asc') {
+                newDir = 'desc';
+            }
+            const url = new URL(window.location.href);
+            url.searchParams.set('sort_by', column);
+            url.searchParams.set('sort_dir', newDir);
+            url.searchParams.delete('page');
+            window.location.href = url.toString();
+        }
+
+        function applyQuickSort(val) {
+            const map = {
+                'name_asc': { col: 'name', dir: 'asc' },
+                'name_desc': { col: 'name', dir: 'desc' },
+                'created_at_desc': { col: 'created_at', dir: 'desc' },
+                'created_at_asc': { col: 'created_at', dir: 'asc' },
+                'bookings_desc': { col: 'bookings_count', dir: 'desc' },
+                'company_asc': { col: 'company_name', dir: 'asc' },
+                'code_asc': { col: 'code', dir: 'asc' },
+                'phone_asc': { col: 'phone', dir: 'asc' },
+                'id_number_asc': { col: 'id_number', dir: 'asc' }
+            };
+            if (map[val]) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('sort_by', map[val].col);
+                url.searchParams.set('sort_dir', map[val].dir);
+                url.searchParams.delete('page');
+                window.location.href = url.toString();
+            }
         }
     </script>
 @endsection

@@ -1913,7 +1913,16 @@
                                 <label class="form-label">Filter Tipe Kamar</label>
                                 <select class="form-select" id="transfer_filter_type" onchange="loadTransferRooms()">
                                     <option value="">All Types</option>
-                                    @foreach(\App\Models\RoomType::where('is_active', true)->get() as $type)
+                                    @php
+                                        $transferRoomTypes = \App\Models\RoomType::where('is_active', true)
+                                            ->when(in_array($booking->stay_type, ['monthly', 'yearly']), function($q) {
+                                                $q->whereHas('rooms', fn($r) => $r->where('is_kos', true));
+                                            }, function($q) {
+                                                $q->whereHas('rooms', fn($r) => $r->where('is_kos', false));
+                                            })
+                                            ->get();
+                                    @endphp
+                                    @foreach($transferRoomTypes as $type)
                                         <option value="{{ $type->id }}">{{ $type->name }}</option>
                                     @endforeach
                                 </select>
@@ -1941,16 +1950,16 @@
                                 <div class="col-md-6">
                                     <table class="table table-sm table-borderless mb-0">
                                         <tr><td class="text-muted">Kamar Lama:</td><td class="fw-medium" id="tp_old_room">-</td></tr>
-                                        <tr><td class="text-muted">Harga/malam:</td><td id="tp_old_price">-</td></tr>
-                                        <tr><td class="text-muted">Malam terpakai:</td><td id="tp_nights_used">-</td></tr>
+                                        <tr><td class="text-muted">{{ in_array($booking->stay_type, ['monthly', 'yearly']) ? 'Tarif prorata/hari:' : 'Harga/malam:' }}</td><td id="tp_old_price">-</td></tr>
+                                        <tr><td class="text-muted">{{ in_array($booking->stay_type, ['monthly', 'yearly']) ? 'Hari terpakai:' : 'Malam terpakai:' }}</td><td id="tp_nights_used">-</td></tr>
                                         <tr><td class="text-muted">Subtotal lama:</td><td id="tp_cost_old">-</td></tr>
                                     </table>
                                 </div>
                                 <div class="col-md-6">
                                     <table class="table table-sm table-borderless mb-0">
                                         <tr><td class="text-muted">Kamar Baru:</td><td class="fw-medium" id="tp_new_room">-</td></tr>
-                                        <tr><td class="text-muted">Harga/malam:</td><td id="tp_new_price">-</td></tr>
-                                        <tr><td class="text-muted">Sisa malam:</td><td id="tp_remaining">-</td></tr>
+                                        <tr><td class="text-muted">{{ in_array($booking->stay_type, ['monthly', 'yearly']) ? 'Tarif prorata/hari:' : 'Harga/malam:' }}</td><td id="tp_new_price">-</td></tr>
+                                        <tr><td class="text-muted">{{ in_array($booking->stay_type, ['monthly', 'yearly']) ? 'Sisa hari:' : 'Sisa malam:' }}</td><td id="tp_remaining">-</td></tr>
                                         <tr><td class="text-muted">Subtotal baru:</td><td id="tp_cost_new">-</td></tr>
                                     </table>
                                 </div>
@@ -2280,7 +2289,7 @@
                 check_out: '{{ $booking->check_out->format("Y-m-d") }}',
                 room_type_id: typeId,
                 guest_id: '{{ $booking->guest_id }}',
-                stay_type: 'daily'
+                stay_type: '{{ $booking->stay_type ?? "daily" }}'
             });
             fetch(`{{ route('bookings.available-rooms') }}?${params.toString()}`).then(r => r.json()).then(rooms => {
                 const container = document.getElementById('transfer_room_list');
@@ -2352,15 +2361,26 @@
 
                     const cardOpacity = canTransfer ? '' : 'opacity-50';
 
-                    const col = document.createElement('div');
-                    col.className = 'col-md-3';
-                    col.innerHTML = `
-                        <div class="card border shadow-none h-100 ${cardOpacity}">
-                            <div class="card-body p-3">
-                                <h6 class="fs-14 mb-1">${t.room_label} ${room.room_number}</h6>
-                                <span class="badge bg-primary-subtle text-primary mb-1">${room.room_type}</span>
-                                ${statusBadge}
-                                ${canTransfer ? `<div class="d-grid gap-1 mt-1">
+                    let actionButtons = '';
+                    if (canTransfer) {
+                        if ('{{ $booking->stay_type }}' === 'yearly') {
+                            const yp = (room.yearly_price || room.price_kos || 0);
+                            actionButtons = `
+                                <div class="d-grid gap-1 mt-1">
+                                    <button type="button" class="btn btn-sm btn-soft-success" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${yp}, 'public')">
+                                        Pilih (Tahunan): ${formatRp(yp)} / thn
+                                    </button>
+                                </div>`;
+                        } else if ('{{ $booking->stay_type }}' === 'monthly') {
+                            actionButtons = `
+                                <div class="d-grid gap-1 mt-1">
+                                    <button type="button" class="btn btn-sm btn-soft-success" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_kos}, 'public')">
+                                        Pilih (Kos): ${formatRp(room.price_kos)}
+                                    </button>
+                                </div>`;
+                        } else {
+                            actionButtons = `
+                                <div class="d-grid gap-1 mt-1">
                                     <button type="button" class="btn btn-sm btn-soft-primary" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_public}, 'public')">
                                         Umum: ${formatRp(room.price_public)}
                                     </button>
@@ -2370,7 +2390,21 @@
                                     <button type="button" class="btn btn-sm btn-soft-danger" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_high_season}, 'high_season')">
                                         High Season: ${formatRp(room.price_high_season)}
                                     </button>
-                                </div>` : blockReason}
+                                </div>`;
+                        }
+                    } else {
+                        actionButtons = blockReason;
+                    }
+
+                    const col = document.createElement('div');
+                    col.className = 'col-md-3';
+                    col.innerHTML = `
+                        <div class="card border shadow-none h-100 ${cardOpacity}">
+                            <div class="card-body p-3">
+                                <h6 class="fs-14 mb-1">${t.room_label} ${room.room_number}</h6>
+                                <span class="badge bg-primary-subtle text-primary mb-1">${room.room_type}</span>
+                                ${statusBadge}
+                                ${actionButtons}
                             </div>
                         </div>`;
                     container.appendChild(col);

@@ -79,6 +79,9 @@
 
                             <div class="text-center">
                                 <p class="text-muted fs-13 mb-4">Silakan login kembali saat jam shift Anda dimulai.</p>
+                                <a href="{{ route('attendance.index') }}" class="btn btn-warning w-100 mb-2">
+                                    <i class="ri-fingerprint-line me-1"></i> Ke Menu Absensi (Check Out)
+                                </a>
                                 <a href="{{ route('dashboard') }}" class="btn btn-primary w-100 mb-2">
                                     <i class="ri-refresh-line me-1"></i> Coba Lagi
                                 </a>

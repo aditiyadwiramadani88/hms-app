@@ -36,40 +36,59 @@ class AttendanceService
         $now = now();
 
         // GUARD: Check if there's an unclosed overnight shift from yesterday
-        // If employee has yesterday's attendance with check-in but no check-out,
-        // AND that shift is overnight (end_time < start_time), AND current time is before shift end,
-        // THEN they should check-out yesterday's shift first, not create a new check-in.
         $unclosedYesterday = Attendance::where('employee_id', $employeeId)
             ->where('attendance_date', $yesterday)
             ->whereNotNull('check_in_time')
             ->whereNull('check_out_time')
-            ->with('shift')
+            ->with(['shift', 'schedule.shift'])
             ->first();
 
-        if ($unclosedYesterday && $unclosedYesterday->shift) {
-            $shift = $unclosedYesterday->shift;
-            // Overnight shift: end_time < start_time (e.g. 16:00-07:00)
-            if ($shift->end_time && $shift->start_time && $shift->end_time < $shift->start_time) {
-                $shiftEndToday = Carbon::parse($today . ' ' . $shift->end_time);
-                // If current time is before shift end (still within yesterday's overnight shift)
-                if ($now->lt($shiftEndToday)) {
-                    throw new \RuntimeException('Shift kemarin (' . $shift->name . ') belum checkout. Silakan checkout terlebih dahulu sebelum check-in baru.');
+        if ($unclosedYesterday) {
+            $shift = $unclosedYesterday->shift ?? $unclosedYesterday->schedule?->shift;
+            $hoursSince = $unclosedYesterday->check_in_time ? $unclosedYesterday->check_in_time->diffInHours($now) : 0;
+
+            // Check if user has an active schedule starting now or today
+            $todayScheduleCheck = EmployeeSchedule::where('employee_id', $employeeId)
+                ->where('schedule_date', $today)
+                ->with('shift')
+                ->whereHas('shift', function ($q) {
+                    $q->where('is_off', false);
+                })
+                ->first();
+
+            $isNextShiftTime = false;
+            if ($todayScheduleCheck && $todayScheduleCheck->shift) {
+                $shiftStart = Carbon::parse($today . ' ' . $todayScheduleCheck->shift->start_time)->subHours(2);
+                $shiftEnd = Carbon::parse($today . ' ' . $todayScheduleCheck->shift->end_time);
+                if ($shiftEnd <= $shiftStart) {
+                    $shiftEnd->addDay();
                 }
+                if ($now->between($shiftStart, $shiftEnd)) {
+                    $isNextShiftTime = true;
+                }
+            }
+
+            // Option 2: If the next shift time HAS arrived (or > 18 hours), auto-close yesterday's unclosed shift
+            // so the employee is NEVER blocked from checking in to their new shift!
+            if ($isNextShiftTime || $hoursSince > 18) {
+                $endTime = $shift ? ($shift->end_time_2 ?: $shift->end_time) : null;
+                $autoOutTime = $endTime ? Carbon::parse($yesterday . ' ' . $endTime) : $unclosedYesterday->check_in_time->copy()->addHours(8);
+                if ($autoOutTime <= $unclosedYesterday->check_in_time) {
+                    $autoOutTime->addDay();
+                }
+                $unclosedYesterday->update([
+                    'check_out_time' => $autoOutTime,
+                    'notes' => trim(($unclosedYesterday->notes ?? '') . ' [Auto-closed by next shift check-in]'),
+                ]);
+            } else {
+                $shiftName = $shift ? $shift->name : 'Shift Kemarin';
+                throw new \RuntimeException("Shift kemarin ({$shiftName}) belum checkout. Silakan lakukan Check-Out terlebih dahulu.");
             }
         }
 
-        // Try today's schedule first (exclude OFF/LIBUR shifts)
-        $schedule = EmployeeSchedule::where('employee_id', $employeeId)
-            ->where('schedule_date', $today)
-            ->with('shift')
-            ->whereHas('shift', function ($q) {
-                $q->where('is_off', false);
-            })
-            ->first();
-
-        // If no valid schedule today, check yesterday's schedule (for cross-midnight night shifts)
-        // Night shift example: schedule_date = yesterday, shift 22:00-06:00
-        if (!$schedule || !$schedule->shift) {
+        // If current time is early morning (00:00 - 08:00), check if checking in for yesterday's overnight shift
+        $schedule = null;
+        if ($now->hour < 8) {
             $yesterdaySchedule = EmployeeSchedule::where('employee_id', $employeeId)
                 ->where('schedule_date', $yesterday)
                 ->with('shift')
@@ -79,11 +98,50 @@ class AttendanceService
                 ->first();
 
             if ($yesterdaySchedule && $yesterdaySchedule->shift) {
-                // Check if this is an overnight shift (end_time < start_time means crosses midnight)
                 $shift = $yesterdaySchedule->shift;
                 if ($shift->end_time < $shift->start_time) {
-                    $schedule = $yesterdaySchedule;
-                    $today = $yesterday; // Use yesterday as the attendance date for this overnight shift
+                    $yesterdayCheckedIn = Attendance::where('employee_id', $employeeId)
+                        ->where('attendance_date', $yesterday)
+                        ->whereNotNull('check_in_time')
+                        ->exists();
+
+                    if (!$yesterdayCheckedIn) {
+                        $shiftEnd = Carbon::parse($today . ' ' . $shift->end_time)->addHours(2);
+                        if ($now->lte($shiftEnd)) {
+                            $schedule = $yesterdaySchedule;
+                            $today = $yesterday;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!$schedule) {
+            // Try today's schedule first (exclude OFF/LIBUR shifts)
+            $schedule = EmployeeSchedule::where('employee_id', $employeeId)
+                ->where('schedule_date', $today)
+                ->with('shift')
+                ->whereHas('shift', function ($q) {
+                    $q->where('is_off', false);
+                })
+                ->first();
+
+            // If no valid schedule today, check yesterday's schedule (for cross-midnight night shifts)
+            if (!$schedule || !$schedule->shift) {
+                $yesterdaySchedule = EmployeeSchedule::where('employee_id', $employeeId)
+                    ->where('schedule_date', $yesterday)
+                    ->with('shift')
+                    ->whereHas('shift', function ($q) {
+                        $q->where('is_off', false);
+                    })
+                    ->first();
+
+                if ($yesterdaySchedule && $yesterdaySchedule->shift) {
+                    $shift = $yesterdaySchedule->shift;
+                    if ($shift->end_time < $shift->start_time) {
+                        $schedule = $yesterdaySchedule;
+                        $today = $yesterday; // Use yesterday as the attendance date for this overnight shift
+                    }
                 }
             }
         }
@@ -120,7 +178,28 @@ class AttendanceService
             ->first();
 
         if ($existing) {
-            throw new \RuntimeException('Anda sudah melakukan check-in hari ini.');
+            // Self-healing: if existing attendance was already checked out earlier today (e.g. morning handover checkout),
+            // and the employee has an active evening/night shift starting now, reattribute morning checkout to yesterday
+            if ($existing->check_out_time && $schedule && $schedule->shift) {
+                $shiftStart = Carbon::parse($today . ' ' . $schedule->shift->start_time);
+                $coTime = Carbon::parse($existing->check_out_time);
+
+                // Morning checkout before 13:00, and current shift is evening/night (>= 15:00)
+                if ($shiftStart->hour >= 15 && $coTime->hour < 13) {
+                    $yesterdayHasAtt = Attendance::where('employee_id', $employeeId)
+                        ->where('attendance_date', $yesterday)
+                        ->exists();
+
+                    if (!$yesterdayHasAtt) {
+                        $existing->update(['attendance_date' => $yesterday]);
+                        $existing = null;
+                    }
+                }
+            }
+
+            if ($existing) {
+                throw new \RuntimeException('Anda sudah melakukan check-in hari ini.');
+            }
         }
 
         $location = $this->geofenceService->validateLocation($hotelId, $lat, $lng);
@@ -171,21 +250,26 @@ class AttendanceService
         $yesterday = Carbon::parse($today)->subDay()->format('Y-m-d');
         $now = now();
 
-        // Try to find open attendance for today first
-        // Must have check_in_time to avoid picking up 'absent' placeholders
-        $attendance = Attendance::where('employee_id', $employeeId)
-            ->where('attendance_date', $today)
+        // During morning/handover (before 14:00), prioritize yesterday's unclosed overnight shift
+        $yesterdayAttendance = Attendance::where('employee_id', $employeeId)
+            ->where('attendance_date', $yesterday)
             ->whereNotNull('check_in_time')
             ->whereNull('check_out_time')
             ->first();
 
-        // If not found, check yesterday (for overnight shifts)
-        if (!$attendance) {
+        if ($yesterdayAttendance && $now->hour < 14) {
+            $attendance = $yesterdayAttendance;
+        } else {
+            // Otherwise, look for today's open attendance first
             $attendance = Attendance::where('employee_id', $employeeId)
-                ->where('attendance_date', $yesterday)
+                ->where('attendance_date', $today)
                 ->whereNotNull('check_in_time')
                 ->whereNull('check_out_time')
                 ->first();
+
+            if (!$attendance && $yesterdayAttendance) {
+                $attendance = $yesterdayAttendance;
+            }
         }
 
         if (!$attendance) {

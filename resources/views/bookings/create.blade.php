@@ -304,7 +304,11 @@
                             <select class="form-select" id="filter_room_type">
                                 <option value="">All Types</option>
                                 @foreach($roomTypes as $type)
-                                    <option value="{{ $type->id }}">{{ $type->name }}</option>
+                                    <option value="{{ $type->id }}"
+                                            data-has-kos="{{ $type->rooms()->where('is_kos', true)->exists() ? '1' : '0' }}"
+                                            data-has-daily="{{ $type->rooms()->where('is_kos', false)->exists() ? '1' : '0' }}">
+                                        {{ $type->name }}
+                                    </option>
                                 @endforeach
                             </select>
                         </div>
@@ -833,8 +837,34 @@
                 loadAvailableRooms();
             };
 
+            function syncRoomTypeFilter(stayType) {
+                const select = document.getElementById('filter_room_type');
+                if (!select) return;
+                let currentValHidden = false;
+                Array.from(select.options).forEach(opt => {
+                    if (!opt.value) return; // 'All Types'
+                    const hasKos = opt.getAttribute('data-has-kos') === '1';
+                    const hasDaily = opt.getAttribute('data-has-daily') === '1';
+                    let show = true;
+                    if (stayType === 'monthly' || stayType === 'yearly') {
+                        show = hasKos;
+                    } else {
+                        show = hasDaily;
+                    }
+                    opt.style.display = show ? '' : 'none';
+                    opt.disabled = !show;
+                    if (!show && select.value === opt.value) {
+                        currentValHidden = true;
+                    }
+                });
+                if (currentValHidden) {
+                    select.value = '';
+                }
+            }
+
             function loadAvailableRooms() {
                 const stayType = document.querySelector('input[name="stay_type"]:checked').value;
+                syncRoomTypeFilter(stayType);
                 const showAll = document.getElementById('show_all_rooms')?.checked || false;
                 const params = new URLSearchParams({
                     check_in: checkIn.value,

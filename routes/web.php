@@ -298,7 +298,8 @@ Route::prefix('admin')->group(function () {
     Route::resource('hotels', HotelController::class)->middleware('permission:manage system');
 
     // Rooms Management
-    Route::resource('rooms', RoomController::class)->middleware('permission:manage system');
+    Route::get('/rooms/{room}', [RoomController::class, 'show'])->name('rooms.show')->middleware('permission:manage system|book rooms|bookings.list|manage reservations');
+    Route::resource('rooms', RoomController::class)->except(['show'])->middleware('permission:manage system');
     Route::post('/rooms/{room}/update-status', [RoomController::class, 'updateStatus'])->name('rooms.update-status')->middleware('permission:manage system');
 
     // Bookings Management — Granular Permissions

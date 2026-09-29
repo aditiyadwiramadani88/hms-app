@@ -88,6 +88,13 @@ class SecurityGateController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
+            $userName = auth()->user()?->name ?? ('User #' . auth()->id());
+            \App\Models\AuditLog::log(
+                'vehicle_log.created',
+                "Vehicle log #{$vehicleLog->id} ({$vehicleLog->plate_number}) masuk dicatat oleh {$userName}",
+                $vehicleLog
+            );
+
             return $this->ajaxOrRedirect("Kendaraan {$vehicleLog->plate_number} berhasil dicatat masuk.", route('security-gate.dashboard'), $vehicleLog, 201);
         } catch (\Exception $e) {
             if ($this->isAjaxRequest()) return $this->ajaxError($e->getMessage());
@@ -153,6 +160,13 @@ class SecurityGateController extends Controller
                 'security_out_id' => auth()->id(),
                 'photo_out' => !empty($allPhotos) ? array_values($allPhotos) : null,
             ]);
+
+            $userName = auth()->user()?->name ?? ('User #' . auth()->id());
+            \App\Models\AuditLog::log(
+                'vehicle_log.exit',
+                "Vehicle log #{$vehicleLog->id} ({$vehicleLog->plate_number}) keluar dicatat oleh {$userName}",
+                $vehicleLog
+            );
 
             return $this->ajaxOrRedirect("Kendaraan {$vehicleLog->plate_number} berhasil dicatat keluar.", route('security-gate.dashboard'), $vehicleLog);
         } catch (\Exception $e) {
@@ -294,9 +308,10 @@ class SecurityGateController extends Controller
                 'photo_in' => !empty($allPhotos) ? array_values($allPhotos) : null,
             ]);
 
+            $userName = auth()->user()?->name ?? ('User #' . auth()->id());
             \App\Models\AuditLog::log(
                 'vehicle_log.updated',
-                "Vehicle log #{$vehicleLog->id} ({$vehicleLog->plate_number}) updated by User #" . auth()->id(),
+                "Vehicle log #{$vehicleLog->id} ({$vehicleLog->plate_number}) updated by {$userName}",
                 $vehicleLog
             );
 
@@ -330,9 +345,10 @@ class SecurityGateController extends Controller
             $plate = $vehicleLog->plate_number;
             $vehicleLog->delete();
 
+            $userName = auth()->user()?->name ?? ('User #' . auth()->id());
             \App\Models\AuditLog::log(
                 'vehicle_log.deleted',
-                "Vehicle log ({$plate}) deleted by User #" . auth()->id(),
+                "Vehicle log ({$plate}) deleted by {$userName}",
                 null
             );
 

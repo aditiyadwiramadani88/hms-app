@@ -45,12 +45,20 @@ class RoomTransferService
             $oldPricePerNight = (float) ($booking->base_price / $origTotalNights);
         }
 
-        // New room price per night based on tier
-        $newPricePerNight = match ($tier) {
-            'sales' => (float) ($newRoom->price_sales ?? $newRoom->price_public ?? 0),
-            'high_season' => (float) ($newRoom->price_high_season ?? $newRoom->price_public ?? 0),
-            default => (float) ($newRoom->price_public ?? 0),
-        };
+        // New room price per night based on tier / stay_type
+        if ($booking->stay_type === 'yearly') {
+            $yearlyRate = (float) ($newRoom->yearly_price ?? (($newRoom->price_kos ? $newRoom->price_kos * 12 : 0) ?: ($newRoom->price_public * 365)));
+            $newPricePerNight = round($yearlyRate / $origTotalNights, 2);
+        } elseif ($booking->stay_type === 'monthly') {
+            $monthlyRate = (float) ($newRoom->price_kos ?? ($newRoom->roomType?->monthly_price ?? ($newRoom->price_public * 30)));
+            $newPricePerNight = round($monthlyRate / 30, 2);
+        } else {
+            $newPricePerNight = match ($tier) {
+                'sales' => (float) ($newRoom->price_sales ?? $newRoom->price_public ?? 0),
+                'high_season' => (float) ($newRoom->price_high_season ?? $newRoom->price_public ?? 0),
+                default => (float) ($newRoom->price_public ?? 0),
+            };
+        }
 
         // Calculate room costs
         $costOldRoom = $nightsUsed * $oldPricePerNight;
@@ -127,6 +135,10 @@ class RoomTransferService
 
         if ($newRoom->id === $booking->room_id) {
             throw new \Exception('Kamar tujuan harus berbeda dari kamar saat ini.');
+        }
+
+        if (in_array($booking->stay_type, ['monthly', 'yearly']) && !$newRoom->is_kos) {
+            throw new \Exception('Kamar tujuan harus merupakan tipe kamar kos/bulanan/tahunan untuk reservasi ini.');
         }
 
         return DB::transaction(function () use ($booking, $newRoom, $tier, $reason, $notes, $chargeDifference, $newCheckOut) {
