@@ -22,7 +22,7 @@
     <div class="header">
         <h1>{{ $hotel->name ?? 'SIMPANG HOMESTAY & KOZZ' }}</h1>
         <h2>LAPORAN TUGAS HOUSEKEEPING</h2>
-        <div class="date">Periode: {{ $monthObj->translatedFormat('F Y') }}</div>
+        <div class="date">Periode: {{ $periodLabel ?? $monthObj->translatedFormat('F Y') }}</div>
     </div>
 
     {{-- TABLE 1: Rekap Per Staff (Summary) --}}
@@ -74,11 +74,11 @@
             <tr>
                 <th style="width: 25px;">NO</th>
                 <th>TANGGAL</th>
-                <th>KAMAR YANG DIKERJAKAN</th>
-                <th>NAMA STAFF</th>
+                <th>KAMAR</th>
+                <th>NAMA TAMU</th>
                 <th>SUMBER BOOKING</th>
-                <th>KATEGORI BONUS</th>
-                <th>STATUS VERIFIKASI</th>
+                <th>NAMA STAFF</th>
+                <th>STATUS VERIFIKASI KAMAR</th>
             </tr>
         </thead>
         <tbody>
@@ -87,9 +87,9 @@
                 <td class="text-center">{{ $i + 1 }}</td>
                 <td>{{ $d['tanggal'] }}</td>
                 <td><strong>{{ $d['kamar'] }}</strong></td>
-                <td>{{ $d['staff'] }}</td>
+                <td>{{ $d['nama_tamu'] ?? '-' }}</td>
                 <td class="text-center">{{ $d['sumber'] }}</td>
-                <td class="text-center">{{ $d['kategori_bonus'] }}</td>
+                <td>{{ $d['staff'] }}</td>
                 <td class="text-center">{{ $d['status_verifikasi'] }}</td>
             </tr>
             @endforeach

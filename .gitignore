@@ -61,3 +61,5 @@ tests/Unit/RoomAvailabilityConflictTest.php
 tests/Unit/PrintReceiptAndInvoiceAccuracyTest.php
 tests/Unit/GuestTableSortingTest.php
 tests/Unit/OvernightShiftAttendanceTest.php
+database/seeders/BookingSourceSeeder.php
+

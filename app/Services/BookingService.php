@@ -113,6 +113,30 @@ class BookingService
             // Determine acting user (for public bookings, pass via data)
             $userId = $data['user_id'] ?? Auth::id();
 
+            // Resolve booking source & guest_type
+            $bookingSource = !empty($data['booking_source_id'])
+                ? \App\Models\BookingSource::find($data['booking_source_id'])
+                : null;
+            $sourceName = strtolower(trim($bookingSource?->name ?? $data['source'] ?? ''));
+
+            $guestType = 'umum';
+            if (($data['stay_type'] ?? 'daily') === 'monthly' || ($data['stay_type'] ?? 'daily') === 'yearly' || in_array($sourceName, ['kos', 'kost'])) {
+                $guestType = 'kos';
+            } elseif (
+                str_contains($sourceName, 'sales') ||
+                ($data['tier_applied'] ?? '') === 'sales' ||
+                ($appliedTier === 'sales') ||
+                ($guest->guestCategory && str_contains(strtolower($guest->guestCategory->name), 'sales')) ||
+                !empty($guest->company_name)
+            ) {
+                $guestType = 'sales';
+            } elseif (
+                in_array($sourceName, ['traveloka', 'tiket.com', 'agoda', 'booking.com', 'airbnb', 'ota']) ||
+                str_contains($sourceName, 'online')
+            ) {
+                $guestType = 'online';
+            }
+
             // Create booking
             $booking = Booking::create([
                 'hotel_id' => active_hotel_id(),
@@ -138,8 +162,9 @@ class BookingService
                 'payment_status' => ($priceData['total_price'] + ($data['deposit_amount'] ?? 0) + $breakfastTotal) <= 0 ? 'paid' : 'unpaid',
                 'notes' => $data['notes'] ?? null,
                 'voucher_code' => $voucher?->code,
-                'source' => $data['source'] ?? 'walk_in',
+                'source' => $bookingSource ? $bookingSource->name : ($data['source'] ?? 'walk_in'),
                 'booking_source_id' => $data['booking_source_id'] ?? null,
+                'guest_type' => $guestType,
             ]);
 
             // Update voucher usage count

@@ -177,10 +177,18 @@
                             </div>
                         </div>
                         <div class="mb-3">
-                            <label for="booking_source_id" class="form-label">Sumber Booking</label>
-                            <select class="form-select" id="booking_source_id" name="booking_source_id" style="width:100%">
+                            <label for="booking_source_id" class="form-label">Sumber Booking <span class="text-danger">*</span></label>
+                            <select class="form-select" id="booking_source_id" name="booking_source_id" style="width:100%" required>
                                 <option value="">-- Pilih Sumber --</option>
+                                @if(isset($bookingSources))
+                                    @foreach($bookingSources as $src)
+                                        <option value="{{ $src->id }}" {{ old('booking_source_id') == $src->id ? 'selected' : '' }}>{{ $src->name }}</option>
+                                    @endforeach
+                                @endif
                             </select>
+                            @error('booking_source_id')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                     </div>
                 </div>
@@ -452,11 +460,35 @@
             }).on('change', function() { if($('#room_id').val()) loadAvailableRooms(); });
             $('#guest_category_select').select2({ dropdownParent: $('#addGuestModal') });
 
-            $.getJSON('{{ route("booking-sources.api") }}', function(data) {
-                $.each(data, function(i, src) {
-                    $('#booking_source_id').append(new Option(src.name, src.id));
+            if ($('#booking_source_id option').length <= 1) {
+                $.getJSON('{{ route("booking-sources.api") }}', function(data) {
+                    $.each(data, function(i, src) {
+                        $('#booking_source_id').append(new Option(src.name, src.id));
+                    });
+                    $('#booking_source_id').select2({ placeholder: '-- Pilih Sumber (Wajib) --', allowClear: false });
                 });
-                $('#booking_source_id').select2({ placeholder: '-- Pilih Sumber --', allowClear: true });
+            } else {
+                $('#booking_source_id').select2({ placeholder: '-- Pilih Sumber (Wajib) --', allowClear: false });
+            }
+
+            $('#bookingForm').on('submit', function(e) {
+                if (!$('#booking_source_id').val()) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    if (typeof Toastify === 'function') {
+                        Toastify({
+                            text: "Sumber booking wajib dipilih!",
+                            duration: 3500,
+                            gravity: "top",
+                            position: "right",
+                            backgroundColor: "#f06548",
+                        }).showToast();
+                    } else {
+                        alert("Sumber booking wajib dipilih!");
+                    }
+                    $('#booking_source_id').select2('open');
+                    return false;
+                }
             });
         });
 

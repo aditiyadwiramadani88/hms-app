@@ -69,7 +69,10 @@ class HousekeepingCheckerController extends Controller
             'verification_status' => 'approved',
         ]);
 
-        $task->update(['status' => CleaningTask::STATUS_SELESAI]);
+        $task->update([
+            'status' => CleaningTask::STATUS_SELESAI,
+            'completed_at' => $task->completed_at ?? now(),
+        ]);
 
         // Update room to Available
         if ($task->room) {

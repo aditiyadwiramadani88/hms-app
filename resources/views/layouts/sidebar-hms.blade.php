@@ -113,7 +113,31 @@
                             @can('manage pos')
                             @if(!auth()->user()->hasRole('Front Page Only'))
                             <li class="nav-item">
-                                <a href="{{ route('pos.index') }}" class="nav-link">{{ __('translation.pos') }}</a>
+                                <a class="nav-link menu-link" href="#sidebarFrontOfficePOS" data-bs-toggle="collapse" role="button" aria-expanded="{{ request()->routeIs('pos.*', 'inventory.*', 'warehouse.*') ? 'true' : 'false' }}">
+                                    <span>{{ __('translation.pos') }}</span>
+                                    <span class="menu-arrow"></span>
+                                </a>
+                                <div class="collapse {{ request()->routeIs('pos.*', 'inventory.*', 'warehouse.*') ? 'show' : '' }}" id="sidebarFrontOfficePOS">
+                                    <ul class="nav nav-sm flex-column ps-3">
+                                        <li class="nav-item">
+                                            <a href="{{ route('pos.index') }}" class="nav-link">Kasir POS</a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a href="{{ route('inventory.index') }}" class="nav-link">{{ __('translation.inventory') }}</a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a href="{{ route('inventory.categories.index') }}" class="nav-link">{{ __('translation.list') }} Categories</a>
+                                        </li>
+                                        @can('manage warehouse')
+                                        <li class="nav-item">
+                                            <a href="{{ route('warehouse.index') }}" class="nav-link">Gudang & Etalase</a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a href="{{ route('warehouse.transfer.index') }}" class="nav-link">Mutasi Lintas Gudang</a>
+                                        </li>
+                                        @endcan
+                                    </ul>
+                                </div>
                             </li>
                             @endif
                             @endcan

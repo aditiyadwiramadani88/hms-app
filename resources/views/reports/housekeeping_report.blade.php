@@ -19,27 +19,60 @@
                 </div>
             </div>
             <div class="card-body">
-                @if(request()->filled('date'))
+                @if(request()->filled('start_date') && request()->filled('end_date'))
+                <div class="alert alert-info py-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="ri-history-line me-1"></i> Menampilkan riwayat tugas dari tanggal <strong>{{ \Carbon\Carbon::parse(request('start_date'))->translatedFormat('d F Y') }}</strong> s/d <strong>{{ \Carbon\Carbon::parse(request('end_date'))->translatedFormat('d F Y') }}</strong>
+                        @if(request()->filled('room_id') && ($selectedRoom = $roomList->firstWhere('id', request('room_id'))))
+                            (Khusus <strong>Kamar {{ $selectedRoom->room_number }}</strong>)
+                        @endif
+                    </div>
+                    <a href="{{ route('reports.housekeeping', ['month' => $month]) }}" class="btn btn-sm btn-outline-info">Lihat 1 Bulan Penuh &raquo;</a>
+                </div>
+                @elseif(request()->filled('date'))
                 <div class="alert alert-info py-2 d-flex justify-content-between align-items-center">
                     <div>
                         <i class="ri-calendar-line me-1"></i> Menampilkan tugas tanggal <strong>{{ \Carbon\Carbon::parse(request('date'))->translatedFormat('d F Y') }}</strong> saja.
+                        @if(request()->filled('room_id') && ($selectedRoom = $roomList->firstWhere('id', request('room_id'))))
+                            (Khusus <strong>Kamar {{ $selectedRoom->room_number }}</strong>)
+                        @endif
                     </div>
                     <a href="{{ route('reports.housekeeping', ['month' => $month]) }}" class="btn btn-sm btn-outline-info">Lihat 1 Bulan Penuh &raquo;</a>
+                </div>
+                @elseif(request()->filled('room_id') && ($selectedRoom = $roomList->firstWhere('id', request('room_id'))))
+                <div class="alert alert-info py-2 d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="ri-door-line me-1"></i> Menampilkan riwayat pengerjaan <strong>Kamar {{ $selectedRoom->room_number }}</strong> pada bulan <strong>{{ \Carbon\Carbon::parse($month)->translatedFormat('F Y') }}</strong>.
+                    </div>
+                    <a href="{{ route('reports.housekeeping', ['month' => $month]) }}" class="btn btn-sm btn-outline-info">Lihat Semua Kamar &raquo;</a>
                 </div>
                 @endif
 
                 {{-- Filters --}}
                 <form method="GET" class="row g-3 mb-4 align-items-end">
-                    <div class="col-md-3 col-sm-6">
-                        <label class="form-label fw-semibold">Pilih Tanggal (Harian)</label>
-                        <input type="date" name="date" class="form-control" value="{{ request('date') }}">
+                    <div class="col-md-2 col-sm-6">
+                        <label class="form-label fw-semibold">Dari Tanggal</label>
+                        <input type="date" name="start_date" class="form-control" value="{{ request('start_date') }}">
                     </div>
                     <div class="col-md-2 col-sm-6">
-                        <label class="form-label fw-semibold">Bulan</label>
+                        <label class="form-label fw-semibold">Sampai Tanggal</label>
+                        <input type="date" name="end_date" class="form-control" value="{{ request('end_date') }}">
+                    </div>
+                    <div class="col-md-2 col-sm-6">
+                        <label class="form-label fw-semibold">Bulan (Default)</label>
                         <input type="month" name="month" class="form-control" value="{{ $month }}">
                     </div>
-                    <div class="col-md-3 col-sm-6">
-                        <label class="form-label fw-semibold">Anak yang Bertugas (Staff)</label>
+                    <div class="col-md-2 col-sm-6">
+                        <label class="form-label fw-semibold">Pilih Kamar</label>
+                        <select name="room_id" class="form-select">
+                            <option value="">Semua Kamar</option>
+                            @foreach($roomList as $r)
+                                <option value="{{ $r->id }}" {{ request('room_id') == $r->id ? 'selected' : '' }}>Kamar {{ $r->room_number }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-2 col-sm-6">
+                        <label class="form-label fw-semibold">Staff (OB)</label>
                         <select name="staff_id" class="form-select">
                             <option value="">Semua Staff</option>
                             @foreach($staffList as $staff)
@@ -54,10 +87,10 @@
                             <option value="date_asc" {{ request('sort_by') == 'date_asc' ? 'selected' : '' }}>Tanggal Terlama</option>
                         </select>
                     </div>
-                    <div class="col-md-2 col-sm-12 d-flex gap-1">
-                        <button type="submit" class="btn btn-primary flex-grow-1"><i class="ri-search-line me-1"></i> Filter</button>
-                        @if(request()->filled('date') || request()->filled('staff_id'))
-                            <a href="{{ route('reports.housekeeping', ['month' => $month]) }}" class="btn btn-outline-secondary" title="Reset Filter"><i class="ri-refresh-line"></i></a>
+                    <div class="col-12 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary"><i class="ri-search-line me-1"></i> Tampilkan Laporan & Riwayat</button>
+                        @if(request()->filled('start_date') || request()->filled('end_date') || request()->filled('date') || request()->filled('room_id') || request()->filled('staff_id'))
+                            <a href="{{ route('reports.housekeeping', ['month' => $month]) }}" class="btn btn-outline-secondary" title="Reset Filter"><i class="ri-refresh-line me-1"></i> Reset Filter</a>
                         @endif
                     </div>
                 </form>
@@ -130,11 +163,11 @@
                                     <tr>
                                         <th style="width: 50px;" class="text-center">NO</th>
                                         <th>TANGGAL</th>
-                                        <th>KAMAR YANG DIKERJAKAN</th>
-                                        <th>NAMA STAFF</th>
+                                        <th>KAMAR</th>
+                                        <th>NAMA TAMU</th>
                                         <th>SUMBER BOOKING</th>
-                                        <th>KATEGORI BONUS</th>
-                                        <th class="text-center">STATUS VERIFIKASI</th>
+                                        <th>NAMA STAFF</th>
+                                        <th class="text-center">STATUS VERIFIKASI KAMAR</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -143,9 +176,9 @@
                                         <td class="text-center">{{ $i + 1 }}</td>
                                         <td>{{ $d['tanggal'] }}</td>
                                         <td class="fw-semibold text-dark">{{ $d['kamar'] }}</td>
-                                        <td>{{ $d['staff'] }}</td>
+                                        <td>{{ $d['nama_tamu'] ?? '-' }}</td>
                                         <td><span class="badge bg-info-subtle text-info">{{ $d['sumber'] }}</span></td>
-                                        <td><span class="badge bg-light text-dark border">{{ $d['kategori_bonus'] }}</span></td>
+                                        <td>{{ $d['staff'] }}</td>
                                         <td class="text-center">
                                             <span class="badge bg-success">{{ $d['status_verifikasi'] }}</span>
                                         </td>

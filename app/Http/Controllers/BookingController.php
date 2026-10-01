@@ -270,10 +270,14 @@ class BookingController extends Controller
         $rooms = collect();
         $taxPercentage =
             \App\Models\Hotel::find(active_hotel_id())->tax_percentage ?? 0;
+        $bookingSources = \App\Models\BookingSource::where("hotel_id", active_hotel_id())
+            ->where("is_active", true)
+            ->orderBy("name")
+            ->get(["id", "name", "color"]);
 
         return view(
             "bookings.create",
-            compact("rooms", "roomTypes", "taxPercentage", "guestCategories"),
+            compact("rooms", "roomTypes", "taxPercentage", "guestCategories", "bookingSources"),
         );
     }
 
@@ -696,9 +700,12 @@ class BookingController extends Controller
             "bank_account_id" => "nullable|exists:bank_accounts,id",
             "exclude_tax" => "nullable|boolean",
             "source" => "nullable|string",
-            "booking_source_id" => "nullable|exists:booking_sources,id",
+            "booking_source_id" => "required|exists:booking_sources,id",
             "include_breakfast" => "nullable|boolean",
             "tier_applied" => "nullable|string|in:public,sales,high_season",
+        ], [
+            "booking_source_id.required" => "Sumber booking wajib dipilih.",
+            "booking_source_id.exists" => "Sumber booking yang dipilih tidak valid.",
         ]);
 
         if ($request->filled("special_requests")) {
@@ -1121,9 +1128,10 @@ class BookingController extends Controller
                     "payment_status" => $validated["payment_status"],
                     "notes" => $notes,
                     "voucher_code" => $validated["voucher_code"] ?? null,
-                    "source" => $validated["source"] ?? $booking->source,
+                    "source" => (!empty($validated["booking_source_id"]) && ($bs = \App\Models\BookingSource::find($validated["booking_source_id"]))) ? $bs->name : ($validated["source"] ?? $booking->source),
                     "booking_source_id" =>
                         $validated["booking_source_id"] ?? null,
+                    "guest_type" => (!empty($validated["booking_source_id"]) && ($bs = \App\Models\BookingSource::find($validated["booking_source_id"])) && str_contains(strtolower($bs->name), 'sales')) ? 'sales' : $booking->guest_type,
                     "include_breakfast" => $includeBreakfast,
                 ]);
 

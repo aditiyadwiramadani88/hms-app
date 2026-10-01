@@ -61,6 +61,25 @@
                     <div class="mb-2">
                         <small class="text-muted">OB:</small> {{ $task->assignedUser->name ?? '-' }}
                     </div>
+                    @php
+                        $submittedAt = $task->completed_at ?? $task->updated_at ?? $task->created_at;
+                        $isToday = $submittedAt ? $submittedAt->isToday() : true;
+                    @endphp
+                    <div class="mb-2 p-2 rounded {{ $isToday ? 'bg-light' : 'bg-danger-subtle' }}">
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                            <small class="fw-semibold {{ $isToday ? 'text-muted' : 'text-danger' }}">
+                                <i class="ri-time-line me-1"></i>Selesai Dibersihkan:
+                            </small>
+                            @if($submittedAt)
+                                <span class="badge {{ $isToday ? 'bg-primary-subtle text-primary' : 'bg-danger text-white' }} fs-11">
+                                    {{ $submittedAt->diffForHumans() }}
+                                </span>
+                            @endif
+                        </div>
+                        <div class="fs-12 fw-medium {{ $isToday ? 'text-dark' : 'text-danger' }}">
+                            {{ $submittedAt ? $submittedAt->translatedFormat('d M Y, H:i') : '-' }}
+                        </div>
+                    </div>
                     <div class="mb-3">
                         <small class="text-muted">Checklist:</small>
                         {{ $task->checklistItems->where('is_done', true)->count() }}/{{ $task->checklistItems->count() }} selesai
@@ -88,7 +107,7 @@
                                 <th>Kamar</th>
                                 <th>OB</th>
                                 <th>Status</th>
-                                <th>Terakhir Update</th>
+                                <th>Waktu Verifikasi</th>
                                 <th>Aksi</th>
                             </tr>
                         </thead>
