@@ -26,8 +26,9 @@
                         <h5 class="card-title mb-0"><i class="ri-file-add-line me-2 text-primary"></i>Custom Invoice Details</h5>
                     </div>
                     <div class="card-body">
-                        <div class="alert alert-info">
-                            <i class="ri-information-line me-2"></i> Buat invoice untuk booking dari OTA/agent. Invoice ini tidak terikat pada stok kamar hotel.
+                        <div class="alert alert-info border-0 shadow-sm">
+                            <i class="ri-information-line me-2 fs-16 align-middle text-info"></i>
+                            <strong>Catatan:</strong> Dibuat khusus untuk kebutuhan invoice / penagihan tamu atau OTA. Invoice ini <strong>tidak masuk ke data operasional</strong> (tidak mengurangi ketersediaan kamar, tidak tercatat di daftar reservasi hotel, dan tidak mempengaruhi kas/keuangan operasional).
                         </div>
 
                         <div class="mb-3">
@@ -40,12 +41,22 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="source" class="form-label">Source / Agent <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="source" name="source" placeholder="Contoh: Traveloka, Agoda, etc." required>
+                                <input type="text" class="form-control" id="source" name="source" placeholder="Contoh: Traveloka, Agoda, Corporate, etc." required>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="room_name" class="form-label">Nama Kamar / Layanan <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="room_name" name="room_name" placeholder="Contoh: Executive Suite Room" required>
-                                <small class="text-muted">Teks ini yang akan muncul sebagai nama item di Invoice.</small>
+                                <select class="form-control" id="room_name" name="room_name" required>
+                                    <option value="">-- Pilih Kamar / Layanan --</option>
+                                    @foreach($rooms ?? [] as $room)
+                                        @php
+                                            $roomLabel = 'Kamar ' . $room->room_number . ($room->roomType ? ' - ' . $room->roomType->name : '');
+                                        @endphp
+                                        <option value="{{ $roomLabel }}" data-price="{{ (int)$room->price_public }}" {{ old('room_name') == $roomLabel ? 'selected' : '' }}>
+                                            {{ $roomLabel }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted">Pilih dari list kamar general data (bisa ketik nama baru jika layanan custom).</small>
                             </div>
                         </div>
 
@@ -77,10 +88,16 @@
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="sell_price" class="form-label text-primary">Harga Jual (Sell Price) <span class="text-danger">*</span></label>
+                                <label for="sell_price" class="form-label text-primary fw-semibold">Harga Jual (Tarif Per Malam) <span class="text-danger">*</span></label>
                                 <div class="input-group">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="number" class="form-control" id="sell_price" name="sell_price" placeholder="Harga yang ditagih ke tamu" required>
+                                    <input type="number" class="form-control" id="sell_price" name="sell_price" placeholder="Tarif per malam" required>
+                                </div>
+                                <div class="p-2 mt-2 bg-light-subtle rounded border d-flex justify-content-between align-items-center">
+                                    <span class="fs-12 text-muted">
+                                        Total: <strong id="preview_nights">1</strong> malam &times; <strong id="preview_rate">Rp 0</strong>
+                                    </span>
+                                    <span class="fs-13 fw-bold text-primary" id="preview_total">Rp 0</span>
                                 </div>
                             </div>
                             <div class="col-md-6 mb-3">
@@ -95,53 +112,6 @@
                         <div class="mb-3">
                             <label for="notes" class="form-label">Catatan / Notes</label>
                             <textarea class="form-control" id="notes" name="notes" rows="3" placeholder="Catatan untuk invoice ini..."></textarea>
-                        </div>
-
-                        <hr class="border-dashed">
-
-                        <div class="mb-3">
-                            <div class="form-check form-switch mb-2">
-                                <input class="form-check-input" type="checkbox" id="create_booking" name="create_booking" value="1">
-                                <label class="form-check-label fw-medium" for="create_booking">Buat juga sebagai Booking Room</label>
-                            </div>
-                            <small class="text-muted">Centang jika booking ini juga membutuhkan kamar fisik di hotel.</small>
-                        </div>
-
-                        <div id="booking_room_section" class="d-none">
-                            <div class="alert alert-warning">
-                                <i class="ri-door-open-line me-2"></i> Booking akan dibuat di tabel <strong>bookings</strong> dan terkait dengan invoice ini.
-                            </div>
-                            <div class="mb-3">
-                                <label for="room_id" class="form-label">Pilih Kamar <span class="text-danger">*</span></label>
-                                <select class="form-select" id="room_id" name="room_id">
-                                    <option value="">-- Pilih Kamar --</option>
-                                    @foreach($rooms as $room)
-                                        <option value="{{ $room->id }}">{{ $room->name }} ({{ $room->roomType->name ?? '-' }})</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        </div>
-
-                        <hr class="border-dashed">
-
-                        <h5 class="fs-14 mb-3">Initial Payment (Opsional)</h5>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Nominal Bayar</label>
-                                <div class="input-group">
-                                    <span class="input-group-text">Rp</span>
-                                    <input type="number" class="form-control" name="down_payment" value="0">
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Akun Pembayaran</label>
-                                <select class="form-select" name="bank_account_id">
-                                    <option value="">-- Pilih Akun --</option>
-                                    @foreach($bankAccounts as $account)
-                                        <option value="{{ $account->id }}">{{ $account->name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
                         </div>
                     </div>
                     <div class="card-footer text-end">
@@ -172,15 +142,34 @@
                 minimumInputLength: 2
             });
 
-            $('#create_booking').on('change', function() {
-                if ($(this).is(':checked')) {
-                    $('#booking_room_section').removeClass('d-none');
-                    $('#room_id').prop('required', true);
-                } else {
-                    $('#booking_room_section').addClass('d-none');
-                    $('#room_id').prop('required', false).val('');
-                }
+            $('#room_name').select2({
+                placeholder: '-- Pilih Kamar / Layanan --',
+                tags: true,
+                allowClear: true
             });
+
+            $('#room_name').on('change', function() {
+                var selectedOption = $(this).find('option:selected');
+                var price = selectedOption.data('price');
+                if (price && (!$('#sell_price').val() || $('#sell_price').val() == '0')) {
+                    $('#sell_price').val(price);
+                }
+                updateInvoiceCalculation();
+            });
+
+            function formatRupiah(num) {
+                return 'Rp ' + Number(num || 0).toLocaleString('id-ID');
+            }
+
+            function updateInvoiceCalculation() {
+                var nights = parseInt($('#nights_display').val()) || 1;
+                var rate = parseFloat($('#sell_price').val()) || 0;
+                var total = nights * rate;
+
+                $('#preview_nights').text(nights);
+                $('#preview_rate').text(formatRupiah(rate));
+                $('#preview_total').text(formatRupiah(total));
+            }
 
             function calcNights() {
                 var ci = new Date($('#check_in').val());
@@ -189,8 +178,10 @@
                     var diff = Math.ceil((co - ci) / (1000 * 60 * 60 * 24));
                     $('#nights_display').val(diff);
                 }
+                updateInvoiceCalculation();
             }
 
+            $('#sell_price').on('input change', updateInvoiceCalculation);
             $('#check_in, #check_out').on('change', calcNights);
             calcNights();
         });

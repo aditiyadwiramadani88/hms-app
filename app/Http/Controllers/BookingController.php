@@ -183,7 +183,7 @@ class BookingController extends Controller
         $sortDir = $request->get("sort_dir", "desc");
         $sortDir = in_array($sortDir, ["asc", "desc"]) ? $sortDir : "desc";
 
-        if ($sortBy === "room_number") {
+        if (in_array($sortBy, ["room_number", "room_id"])) {
             $query
                 ->leftJoin("rooms", "bookings.room_id", "=", "rooms.id")
                 ->orderBy("rooms.room_number", $sortDir);
@@ -2780,13 +2780,25 @@ class BookingController extends Controller
             $breakfastRatePerNight = 0;
             if ($includeBreakfast) {
                 $oldBreakdown = $booking->pricing_breakdown;
-                $tier = is_array($oldBreakdown) && isset($oldBreakdown['tier_applied']) ? $oldBreakdown['tier_applied'] : 'public';
-                $breakfastRatePerNight = match ($tier) {
+                $tier = is_array($oldBreakdown) && !empty($oldBreakdown['tier_applied']) ? $oldBreakdown['tier_applied'] : null;
+                if (!$tier) {
+                    if (strtolower($booking->guest_type ?? '') === 'sales' || strtolower($booking->source ?? '') === 'sales') {
+                        $tier = 'sales';
+                    } elseif ($booking->guest && $booking->guest->guestCategory && str_contains(strtolower($booking->guest->guestCategory->name), 'sales')) {
+                        $tier = 'sales';
+                    } else {
+                        $tier = 'public';
+                    }
+                }
+                $pax = max(1, (int) ($booking->adults ?? 1) + (int) ($booking->children ?? 0));
+                $breakfastUnitPrice = match ($tier) {
                     'sales' => (float) ($room?->price_breakfast_sales ?? 0),
                     'high_season' => (float) ($room?->price_breakfast_high_season ?? 0),
                     default => (float) ($room?->price_breakfast_public ?? 0),
                 };
-                if ($breakfastRatePerNight <= 0 && is_array($oldBreakdown) && isset($oldBreakdown['breakfast_total'])) {
+                if ($breakfastUnitPrice > 0) {
+                    $breakfastRatePerNight = $breakfastUnitPrice * $pax;
+                } elseif (is_array($oldBreakdown) && isset($oldBreakdown['breakfast_total'])) {
                     $origNights = max(1, (int) $booking->check_in->diffInDays($currentCheckOut));
                     $breakfastRatePerNight = (float) $oldBreakdown['breakfast_total'] / $origNights;
                 }
@@ -2960,15 +2972,29 @@ class BookingController extends Controller
 
             $additionalBreakfastCost = 0;
             if ($includeBreakfast) {
-                $tier = isset($newBreakdown['tier_applied']) ? $newBreakdown['tier_applied'] : 'public';
-                $breakfastPricePerNight = match ($tier) {
+                $tier = !empty($newBreakdown['tier_applied']) ? $newBreakdown['tier_applied'] : null;
+                if (!$tier) {
+                    if (strtolower($booking->guest_type ?? '') === 'sales' || strtolower($booking->source ?? '') === 'sales') {
+                        $tier = 'sales';
+                    } elseif ($booking->guest && $booking->guest->guestCategory && str_contains(strtolower($booking->guest->guestCategory->name), 'sales')) {
+                        $tier = 'sales';
+                    } else {
+                        $tier = 'public';
+                    }
+                }
+                $pax = max(1, (int) ($booking->adults ?? 1) + (int) ($booking->children ?? 0));
+                $breakfastUnitPrice = match ($tier) {
                     'sales' => (float) ($room->price_breakfast_sales ?? 0),
                     'high_season' => (float) ($room->price_breakfast_high_season ?? 0),
                     default => (float) ($room->price_breakfast_public ?? 0),
                 };
-                if ($breakfastPricePerNight <= 0 && isset($newBreakdown['breakfast_total'])) {
+                if ($breakfastUnitPrice > 0) {
+                    $breakfastPricePerNight = $breakfastUnitPrice * $pax;
+                } elseif (isset($newBreakdown['breakfast_total'])) {
                     $origNights = max(1, (int) $booking->check_in->copy()->startOfDay()->diffInDays($currentCheckOut));
                     $breakfastPricePerNight = (float) $newBreakdown['breakfast_total'] / $origNights;
+                } else {
+                    $breakfastPricePerNight = 0;
                 }
                 $additionalBreakfastCost = round($breakfastPricePerNight * $additionalDays);
                 $newBreakdown['breakfast_total'] = ((float) ($newBreakdown['breakfast_total'] ?? 0)) + $additionalBreakfastCost;

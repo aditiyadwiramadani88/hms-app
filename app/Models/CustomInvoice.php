@@ -89,6 +89,16 @@ class CustomInvoice extends Model
         return "<span class='badge {$class}'>{$this->status}</span>";
     }
 
+    public function getTotalAmountAttribute(): float
+    {
+        return (float) $this->sell_price * max(1, (int) $this->nights);
+    }
+
+    public function getPricePerNightAttribute(): float
+    {
+        return (float) $this->sell_price;
+    }
+
     public function scopeActive($query)
     {
         return $query->where('status', '!=', 'cancelled');

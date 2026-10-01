@@ -180,9 +180,10 @@ class BookingService
             }
 
             // Audit log
+            $guestName = $booking->guest?->name ?? (\App\Models\Guest::find($data['guest_id'])?->name ?? 'Guest #' . $booking->guest_id);
             \App\Models\AuditLog::log(
                 'booking.created',
-                "Booking #{$booking->id} created for guest {$booking->guest_id}, room {$room->room_number}",
+                "Booking #{$booking->id} created for {$guestName}, room {$room->room_number}",
                 $booking
             );
 
@@ -282,9 +283,10 @@ class BookingService
                 ]);
             }
 
+            $guestName = $booking->guest?->name ?? 'Guest';
             \App\Models\AuditLog::log(
                 'booking.checked_in',
-                "Guest checked in to room {$roomIdentifier} (Booking #{$booking->id})"
+                "Guest {$guestName} checked in to room {$roomIdentifier} (Booking #{$booking->id})"
                     . ($securityDeposit > 0 ? " + Security Deposit Rp " . number_format($securityDeposit, 0, ',', '.') : '')
                     . ($isEarlyCheckIn ? " [CHECK-IN PAKSA sebelum jadwal " . $booking->check_in->format('d M Y') . "]" : ''),
                 $booking
@@ -583,9 +585,10 @@ class BookingService
             }
 
             $roomIdentifier = $booking->is_custom ? $booking->custom_room_name : ($booking->room ? $booking->room->room_number : 'N/A');
+            $guestName = $booking->guest?->name ?? 'Guest';
             \App\Models\AuditLog::log(
                 'booking.checked_out',
-                "Guest checked out from room {$roomIdentifier} (Booking #{$booking->id}). Total: {$totalInvoice}, Paid: {$alreadyPaid}.",
+                "Guest {$guestName} checked out from room {$roomIdentifier} (Booking #{$booking->id}). Total: {$totalInvoice}, Paid: {$alreadyPaid}.",
                 $booking
             );
 

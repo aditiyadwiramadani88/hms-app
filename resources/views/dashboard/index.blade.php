@@ -406,8 +406,7 @@
                                     <th scope="col">User</th>
                                     <th scope="col">Action</th>
                                     <th scope="col">Description</th>
-                                    <th scope="col">IP Address</th>
-                                    <th scope="col" class="text-end">Time</th>
+                                    <th scope="col" class="text-end">Waktu</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -440,16 +439,16 @@
                                     <td>
                                         <span class="text-muted fs-13">{{ $activity->description }}</span>
                                     </td>
-                                    <td>
-                                        <small class="text-muted font-monospace">{{ $activity->ip_address ?? '-' }}</small>
-                                    </td>
-                                    <td class="text-end text-muted">
-                                        <span class="fs-12">{{ $activity->created_at->diffForHumans() }}</span>
+                                    <td class="text-end">
+                                        <span class="fw-semibold text-dark fs-12 d-block">
+                                            <i class="ri-time-line text-muted me-1"></i>{{ $activity->created_at->format('d M Y, H:i') }}
+                                        </span>
+                                        <small class="text-muted fs-11">{{ $activity->created_at->diffForHumans() }}</small>
                                     </td>
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="6" class="text-center py-4 text-muted">
+                                    <td colspan="5" class="text-center py-4 text-muted">
                                         <i class="ri-history-line fs-24 d-block mb-1"></i>
                                         No recent activities.
                                     </td>

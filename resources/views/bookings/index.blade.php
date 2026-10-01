@@ -87,7 +87,7 @@
                             <div class="col-xxl-2 col-sm-6">
                                 <div class="search-box">
                                     <input type="text" class="form-control search" name="search"
-                                           value="{{ request('search') }}" placeholder="Search guest / ID...">
+                                           value="{{ request('search') }}" placeholder="Cari tamu / kamar / ID...">
                                     <i class="ri-search-line search-icon"></i>
                                 </div>
                             </div>
