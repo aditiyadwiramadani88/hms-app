@@ -63,3 +63,10 @@ tests/Unit/GuestTableSortingTest.php
 tests/Unit/OvernightShiftAttendanceTest.php
 database/seeders/BookingSourceSeeder.php
 
+# Auto-pull scripts
+autopull.sh
+auto-pull.sh
+*.autopull.sh
+
+# Binaries
+frankenphp

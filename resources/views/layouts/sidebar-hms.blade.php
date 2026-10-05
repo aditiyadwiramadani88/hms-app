@@ -374,6 +374,7 @@
                                 <a href="{{ route('guest-vehicles.index') }}" class="nav-link">Master Kendaraan</a>
                             </li>
                             @endcan
+                            {{-- 
                             <li class="nav-item">
                                 <a class="nav-link menu-link" href="#sidebarPOS" data-bs-toggle="collapse" role="button" aria-expanded="false">
                                     <span>{{ __('translation.pos') }}</span>
@@ -400,6 +401,7 @@
                                     </ul>
                                 </div>
                             </li>
+                            --}}
                         </ul>
                     </div>
                 </li>
