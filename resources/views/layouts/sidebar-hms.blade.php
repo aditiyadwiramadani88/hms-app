@@ -120,7 +120,10 @@
                                 <div class="collapse {{ request()->routeIs('pos.*', 'inventory.*', 'warehouse.*') ? 'show' : '' }}" id="sidebarFrontOfficePOS">
                                     <ul class="nav nav-sm flex-column ps-3">
                                         <li class="nav-item">
-                                            <a href="{{ route('pos.index') }}" class="nav-link">Kasir POS</a>
+                                            <a href="{{ route('pos.index') }}" class="nav-link {{ request()->routeIs('pos.index', 'pos.create', 'pos.show') && !request()->routeIs('pos.rental.*') ? 'active' : '' }}">Kasir POS</a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a href="{{ route('pos.rental.index') }}" class="nav-link {{ request()->routeIs('pos.rental.*') ? 'active' : '' }}">Rental POS</a>
                                         </li>
                                         <li class="nav-item">
                                             <a href="{{ route('inventory.index') }}" class="nav-link">{{ __('translation.inventory') }}</a>
@@ -292,14 +295,6 @@
                 </li>
                 @endcanany
 
-                {{-- My Leaves (for all employees with permission) --}}
-                @can('leaves.request')
-                <li class="nav-item">
-                    <a class="nav-link menu-link" href="{{ route('my-leaves.index') }}">
-                        <i class="ri-calendar-event-line"></i> <span>Cuti Saya</span>
-                    </a>
-                </li>
-                @endcan
 
                 <!-- HR & PAYROLL -->
                 @can('manage leaves')

@@ -71,6 +71,8 @@ class PosService
                 'payment_status' => 'unpaid',
                 'status' => 'pending',
                 'notes' => $data['notes'] ?? null,
+                'order_type' => $data['order_type'] ?? 'pos',
+                'rental_status' => ($data['order_type'] ?? '') === 'rental' ? 'rented' : null,
             ];
             $order = null;
             for ($attempt = 1; $attempt <= 5; $attempt++) {
@@ -111,11 +113,38 @@ class PosService
                     'subtotal' => $itemSubtotal,
                 ]);
 
-                // Decrement inventory if linked
+                // Decrement inventory if linked (tracks available rental stock)
                 if (isset($item['inventory_id'])) {
                     $inventory = Inventory::find($item['inventory_id']);
                     if ($inventory) {
                         $this->updateInventory($inventory, $quantity);
+
+                        // Also decrement display/default warehouse stock if exists
+                        $defaultWarehouse = \App\Models\Warehouse::where('hotel_id', $inventory->hotel_id)
+                            ->where('type', 'display')
+                            ->first() ?? \App\Models\Warehouse::where('hotel_id', $inventory->hotel_id)->first();
+                        if ($defaultWarehouse) {
+                            $whStock = \App\Models\InventoryWarehouseStock::where('inventory_id', $inventory->id)
+                                ->where('warehouse_id', $defaultWarehouse->id)
+                                ->first();
+                            if ($whStock && $whStock->stock >= $quantity) {
+                                $whStock->decrement('stock', $quantity);
+                            }
+                        }
+
+                        // Log mutation for rental
+                        if (($data['order_type'] ?? '') === 'rental') {
+                            \App\Models\InventoryMutation::create([
+                                'hotel_id' => $inventory->hotel_id,
+                                'inventory_id' => $inventory->id,
+                                'user_id' => Auth::id() ?? auth()->id(),
+                                'type' => 'out',
+                                'quantity' => $quantity,
+                                'notes' => "Disewa via Rental Order #{$order->order_number}",
+                                'reference_type' => PosOrder::class,
+                                'reference_id' => $order->id,
+                            ]);
+                        }
                     }
                 }
             }
@@ -136,7 +165,7 @@ class PosService
                 if ($method !== 'charge_to_room' && $method !== 'unpaid') {
                     $this->processPayment($order, $method, $accountId);
                 }
-            } elseif (($data['payment_method'] ?? null) === 'charge_to_room') {
+            } elseif (($data['payment_method'] ?? null) === 'charge_to_room' || (!empty($order->booking_id) && empty($data['payment_method']))) {
                 // "Charge to Room" is a sentinel option normalized out of
                 // bank_account_id before it reaches here (see PosController),
                 // so it never hit the branch above. Without this, the order
@@ -183,7 +212,8 @@ class PosService
                 if (!$order->booking_id) {
                     throw new \Exception('Cannot charge to room: no booking linked to this order.');
                 }
-                $booking = Booking::findOrFail($order->booking_id);
+                $booking = Booking::withoutGlobalScopes()->findOrFail($order->booking_id);
+
 
                 // Charge to room = add to the room bill, NOT a payment. Leaves the
                 // order completed+unpaid so it's counted in the booking's remaining

@@ -69,9 +69,10 @@ class BookingController extends Controller
             ->addSelect([
                 'unpaid_pos_total' => \App\Models\PosOrder::selectRaw('COALESCE(SUM(total_amount), 0)')
                     ->whereColumn('booking_id', 'bookings.id')
-                    ->where('status', 'completed')
+                    ->where('status', '!=', 'cancelled')
                     ->where('payment_status', 'unpaid')
                     ->limit(1),
+
                 'manual_extra_total' => \App\Models\Transaction::selectRaw('COALESCE(SUM(amount), 0)')
                     ->whereColumn('booking_id', 'bookings.id')
                     ->where('type', 'charge')
@@ -880,7 +881,7 @@ class BookingController extends Controller
             ->where("is_deposit", false)
             ->sum("amount");
         $posTotal = \App\Models\PosOrder::where('booking_id', $booking->id)
-            ->where("status", "completed")
+            ->where("status", "!=", "cancelled")
             ->sum('total_amount');
 
         $extraCharges = $booking->transactions
@@ -888,7 +889,8 @@ class BookingController extends Controller
             ->where("status", "success")
             ->where("reference_id", null)
             ->where("is_deposit", false);
-        $posOrders = $booking->posOrders;
+        $posOrders = $booking->posOrders()->where("status", "!=", "cancelled")->get();
+
 
         // Deposit items
         $depositCharges = $booking->transactions
@@ -1342,6 +1344,13 @@ class BookingController extends Controller
             );
         }
 
+        if ($request->filled('amount') && is_string($request->amount)) {
+            $request->merge(['amount' => preg_replace('/[^0-9]/', '', $request->amount)]);
+        }
+        if ($request->filled('tax_amount') && is_string($request->tax_amount)) {
+            $request->merge(['tax_amount' => preg_replace('/[^0-9]/', '', $request->tax_amount)]);
+        }
+
         $validated = $request->validate([
             "description" => "required|string|max:255",
             "amount" => "required|numeric|min:0",
@@ -1649,6 +1658,10 @@ class BookingController extends Controller
             );
         }
 
+        if ($request->filled('amount') && is_string($request->amount)) {
+            $request->merge(['amount' => preg_replace('/[^0-9]/', '', $request->amount)]);
+        }
+
         $validated = $request->validate([
             "bank_account_id" => "required|exists:bank_accounts,id",
             "amount" => "required|numeric|min:0",
@@ -1749,6 +1762,10 @@ class BookingController extends Controller
                 "error",
                 "Unauthorized or invalid transaction.",
             );
+        }
+
+        if ($request->filled('amount') && is_string($request->amount)) {
+            $request->merge(['amount' => preg_replace('/[^0-9]/', '', $request->amount)]);
         }
 
         $validated = $request->validate([
@@ -2018,6 +2035,10 @@ class BookingController extends Controller
             return back()->with("error", $msg);
         }
 
+        if ($request->filled('discount_amount') && is_string($request->discount_amount)) {
+            $request->merge(['discount_amount' => preg_replace('/[^0-9]/', '', $request->discount_amount)]);
+        }
+
         $validated = $request->validate([
             "voucher_code" => "nullable|string|exists:vouchers,code",
             "discount_amount" => "nullable|numeric|min:0",
@@ -2175,6 +2196,10 @@ class BookingController extends Controller
                 "error",
                 "Cannot edit deposit on a " . $booking->status . " booking.",
             );
+        }
+
+        if ($request->filled('deposit_amount') && is_string($request->deposit_amount)) {
+            $request->merge(['deposit_amount' => preg_replace('/[^0-9]/', '', $request->deposit_amount)]);
         }
 
         $validated = $request->validate([

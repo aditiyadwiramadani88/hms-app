@@ -22,6 +22,11 @@ class PosOrder extends Model
         'payment_status',
         'status',
         'notes',
+        'order_type',
+        'rental_status',
+        'returned_at',
+        'returned_by',
+        'return_notes',
     ];
 
     protected $casts = [
@@ -32,7 +37,13 @@ class PosOrder extends Model
         'payment_method' => 'string',
         'payment_status' => 'string',
         'status' => 'string',
+        'returned_at' => 'datetime',
     ];
+
+    public function returnedBy()
+    {
+        return $this->belongsTo(User::class, 'returned_by');
+    }
 
     public function booking()
     {

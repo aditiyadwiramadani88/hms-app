@@ -289,8 +289,8 @@
                             <label class="form-label text-muted text-uppercase fw-semibold fs-11">Amount to Pay</label>
                             <div class="input-group">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control" name="amount" id="amount_to_pay" 
-                                       value="{{ $order->total_amount }}" required>
+                                <input type="text" inputmode="numeric" class="form-control rupiah-input" name="amount" id="amount_to_pay" 
+                                       value="{{ number_format((int)$order->total_amount, 0, ',', '.') }}" required>
                             </div>
                         </div>
 
@@ -301,7 +301,7 @@
                                 <label class="form-label fs-12 text-muted">Customer Paid</label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="number" class="form-control" id="customer_paid" placeholder="0">
+                                    <input type="text" inputmode="numeric" class="form-control rupiah-input" id="customer_paid" placeholder="0">
                                 </div>
                             </div>
                             <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top border-top-dashed">
@@ -375,12 +375,12 @@
 
             function calculateChange() {
                 if (!amountInput || !paidInput) return;
-                const toPay = parseFloat(amountInput.value) || 0;
-                const paid = parseFloat(paidInput.value) || 0;
+                const toPay = window.parseRupiah ? window.parseRupiah(amountInput.value) : (parseFloat(amountInput.value) || 0);
+                const paid = window.parseRupiah ? window.parseRupiah(paidInput.value) : (parseFloat(paidInput.value) || 0);
                 
                 if (paid >= toPay) {
                     const change = paid - toPay;
-                    changeDisplay.textContent = formatRupiah(change);
+                    changeDisplay.textContent = 'Rp ' + (window.formatRupiah ? window.formatRupiah(change) : new Intl.NumberFormat('id-ID').format(change));
                     changeDisplay.classList.remove('text-danger');
                     changeDisplay.classList.add('text-primary');
                 } else {

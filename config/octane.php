@@ -23,6 +23,10 @@ use Laravel\Octane\Listeners\ReportException;
 use Laravel\Octane\Listeners\StopWorkerIfNecessary;
 use Laravel\Octane\Octane;
 
+if (!class_exists(Octane::class)) {
+    return [];
+}
+
 return [
 
     /*

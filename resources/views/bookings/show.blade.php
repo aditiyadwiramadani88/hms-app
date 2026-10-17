@@ -658,7 +658,7 @@
                                                         <label class="form-label text-muted text-uppercase fw-semibold fs-11">Amount</label>
                                                         <div class="input-group">
                                                             <span class="input-group-text">Rp</span>
-                                                            <input type="number" class="form-control" name="amount" value="{{ (int)$transaction->amount }}" required>
+                                                            <input type="text" inputmode="numeric" class="form-control rupiah-input" name="amount" value="{{ number_format((int)$transaction->amount, 0, ',', '.') }}" required>
                                                         </div>
                                                     </div>
                                                     <div class="mb-3">
@@ -1028,7 +1028,7 @@
                                         <label class="form-label fs-11 text-uppercase fw-semibold">Nominal Refund:</label>
                                         <div class="input-group input-group-sm mb-2">
                                             <span class="input-group-text">Rp</span>
-                                            <input type="number" class="form-control" name="manual_refund_amount" id="manual_refund_amount" value="{{ max(0, round($refundPreview)) }}" min="0" step="1" oninput="checkRefundDiff()">
+                                            <input type="text" inputmode="numeric" class="form-control rupiah-input" name="manual_refund_amount" id="manual_refund_amount" value="{{ number_format(max(0, round($refundPreview)), 0, ',', '.') }}" oninput="checkRefundDiff()">
                                         </div>
                                         <small class="text-muted" id="refund_diff_notice" style="display: none;">
                                             <i class="ri-error-warning-line me-1 text-warning"></i> Nominal berbeda dari estimasi sistem.
@@ -1049,7 +1049,7 @@
                                         const input = document.getElementById('manual_refund_amount');
                                         const notice = document.getElementById('refund_diff_notice');
                                         const estimasi = {{ round($refundPreview) }};
-                                        const val = parseFloat(input.value) || 0;
+                                        const val = window.parseRupiah ? window.parseRupiah(input.value) : (parseFloat(input.value.replace(/[^0-9]/g, '')) || 0);
                                         notice.style.display = (val !== estimasi) ? 'block' : 'none';
                                     }
 
@@ -1068,7 +1068,7 @@
                                             area.style.display = 'block';
                                             select.setAttribute('required', 'required');
                                             amountDisplay.textContent = new Intl.NumberFormat('id-ID').format(totalRefund);
-                                            manualInput.value = Math.round(totalRefund);
+                                            manualInput.value = window.formatRupiah ? window.formatRupiah(Math.round(totalRefund)) : Math.round(totalRefund);
                                             checkRefundDiff();
                                         } else {
                                             area.style.display = 'none';
@@ -1407,14 +1407,14 @@
                                 <label class="form-label">Base Amount (Net)</label>
                                 <div class="input-group">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="number" class="form-control" name="amount" value="0" id="custom_base_amount">
+                                    <input type="text" inputmode="numeric" class="form-control rupiah-input" name="amount" value="0" id="custom_base_amount">
                                 </div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Tax Amount (Opsional)</label>
                                 <div class="input-group">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="number" class="form-control" name="tax_amount" value="0" id="custom_tax_amount">
+                                    <input type="text" inputmode="numeric" class="form-control rupiah-input" name="tax_amount" value="0" id="custom_tax_amount">
                                 </div>
                             </div>
                         </div>
@@ -1454,7 +1454,7 @@
                             <label class="form-label text-muted text-uppercase fw-semibold fs-11">Manual Discount (Rp)</label>
                             <div class="input-group">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control" name="discount_amount" value="{{ $booking->discount_amount }}">
+                                <input type="text" inputmode="numeric" class="form-control rupiah-input" name="discount_amount" value="{{ number_format((int)$booking->discount_amount, 0, ',', '.') }}">
                             </div>
                         </div>
                         <div class="mb-0">
@@ -1521,20 +1521,25 @@
                             <label class="form-label text-muted text-uppercase fw-semibold fs-11">Amount to Record (Nominal Masuk Kas)</label>
                             <div class="input-group">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control" name="amount" id="amount_to_pay" value="{{ (int)$remainingBalance }}" required>
+                                <input type="text" inputmode="numeric" class="form-control rupiah-input" name="amount" id="amount_to_pay" value="{{ number_format((int)$remainingBalance, 0, ',', '.') }}" required>
                             </div>
-                            <small class="text-muted">Sisa Tagihan: Rp {{ number_format($remainingBalance, 0, ',', '.') }}</small>
+                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                <small class="text-muted">
+                                    Sisa Tagihan: <span id="sisa_tagihan_display" class="fw-bold text-success">Rp 0 (Lunas)</span>
+                                </small>
+                                <small class="text-muted fs-11">Total Tagihan: <span class="fw-semibold">Rp {{ number_format($remainingBalance, 0, ',', '.') }}</span></small>
+                            </div>
                         </div>
                         <div id="cash_calculator_section" class="p-3 bg-light rounded mb-3 border border-dashed">
                             <div class="d-flex align-items-center mb-2">
                                 <label class="form-label fs-12 text-muted text-uppercase mb-0 flex-grow-1">Customer Paid (Uang Diterima)</label>
-                                <button type="button" class="btn btn-link btn-sm p-0 fs-11 text-decoration-none" onclick="document.getElementById('amount_to_pay').value = document.getElementById('customer_paid').value; calculateChange();">
+                                <button type="button" class="btn btn-link btn-sm p-0 fs-11 text-decoration-none" onclick="document.getElementById('amount_to_pay').value = document.getElementById('customer_paid').value; calculateChange('amount');">
                                     Use as Record Amount
                                 </button>
                             </div>
                             <div class="input-group input-group-sm mb-2">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control" id="customer_paid" placeholder="Masukkan uang tamu...">
+                                <input type="text" inputmode="numeric" class="form-control rupiah-input" id="customer_paid" placeholder="Masukkan uang tamu...">
                             </div>
                             <div class="d-flex justify-content-between align-items-center">
                                 <span class="fs-13">Kembalian:</span>
@@ -1572,7 +1577,7 @@
                             <label class="form-label text-muted text-uppercase fw-semibold fs-11">Deposit Amount</label>
                             <div class="input-group">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control" name="deposit_amount" value="{{ (int)$booking->deposit_amount }}" min="0" required>
+                                <input type="text" inputmode="numeric" class="form-control rupiah-input" name="deposit_amount" value="{{ number_format((int)$booking->deposit_amount, 0, ',', '.') }}" required>
                             </div>
                         </div>
                         <div class="alert alert-info fs-12 mb-0">
@@ -1931,9 +1936,27 @@
                                 <label class="form-label">Catatan (opsional)</label>
                                 <input type="text" class="form-control" name="notes" placeholder="Catatan tambahan...">
                             </div>
+                            @php
+                                $isOverdue = $booking->check_out->copy()->startOfDay()->lte(now()->startOfDay());
+                                $suggestedCheckOut = '';
+                                if ($isOverdue) {
+                                    if (in_array($booking->stay_type, ['monthly', 'yearly'])) {
+                                        $cand = $booking->check_out->copy()->startOfDay()->addMonth();
+                                        $suggestedCheckOut = $cand->gt(now()) ? $cand->format('Y-m-d') : now()->addMonth()->format('Y-m-d');
+                                    } else {
+                                        $suggestedCheckOut = now()->addDay()->format('Y-m-d');
+                                    }
+                                }
+                            @endphp
                             <div class="col-md-3">
-                                <label class="form-label">Perpanjang Check-out (opsional)</label>
-                                <input type="date" class="form-control" name="new_check_out" id="transfer_new_checkout" min="{{ date('Y-m-d', strtotime('+1 day')) }}" placeholder="Biarkan kosong jika tidak berubah">
+                                <label class="form-label">Perpanjang Check-out <span class="text-muted fs-11">({{ $isOverdue ? 'disesuaikan' : 'opsional' }})</span></label>
+                                <input type="date" class="form-control" name="new_check_out" id="transfer_new_checkout" 
+                                    min="{{ date('Y-m-d', strtotime('+1 day')) }}" 
+                                    value="{{ $suggestedCheckOut }}"
+                                    placeholder="Biarkan kosong jika tidak berubah">
+                                @if($isOverdue)
+                                    <small class="text-warning d-block mt-1"><i class="ri-information-line"></i> Check-out lama telah lewat, otomatis disesuaikan.</small>
+                                @endif
                             </div>
                         </div>
 
@@ -2177,27 +2200,45 @@
             const accountSelect = document.getElementById('payment_account');
             const cashSection = document.getElementById('cash_calculator_section');
 
-            function calculateChange() {
+            function calculateChange(source) {
                 const toPayInput = document.getElementById('amount_to_pay');
                 const paidInput = document.getElementById('customer_paid');
                 const changeDisplay = document.getElementById('change_amount');
+                const sisaDisplay = document.getElementById('sisa_tagihan_display');
                 const remaining = {{ (int)$remainingBalance }};
 
-                const paid = parseFloat(paidInput.value) || 0;
+                const paid = window.parseRupiah ? window.parseRupiah(paidInput ? paidInput.value : '') : 0;
 
-                // Jika bayar kurang dari sisa (cicilan), update nominal kas
-                if (paid > 0 && paid <= remaining) {
-                    toPayInput.value = paid;
-                }
-                // Jika bayar lebih (lunas + kembalian), nominal kas = sisa tagihan
-                else if (paid > remaining) {
-                    toPayInput.value = remaining;
+                // Jika update berasal dari customer_paid:
+                if (source === 'paid') {
+                    if (paid > 0 && paid <= remaining) {
+                        toPayInput.value = window.formatRupiah ? window.formatRupiah(paid) : paid;
+                    } else if (paid > remaining) {
+                        toPayInput.value = window.formatRupiah ? window.formatRupiah(remaining) : remaining;
+                    }
                 }
 
-                const toPay = parseFloat(toPayInput.value) || 0;
+                const toPay = window.parseRupiah ? window.parseRupiah(toPayInput ? toPayInput.value : '') : 0;
                 const change = Math.max(0, paid - toPay);
-                changeDisplay.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(change);
+                if (changeDisplay) {
+                    changeDisplay.textContent = 'Rp ' + (window.formatRupiah ? window.formatRupiah(change) : new Intl.NumberFormat('id-ID').format(change));
+                }
+
+                // Hitung sisa tagihan secara dinamis setelah pembayaran ini
+                if (sisaDisplay) {
+                    const sisaSetelahBayar = Math.max(0, remaining - toPay);
+                    if (sisaSetelahBayar === 0) {
+                        sisaDisplay.textContent = 'Rp 0 (Lunas)';
+                        sisaDisplay.className = 'fw-bold text-success';
+                    } else {
+                        const formattedSisa = window.formatRupiah ? window.formatRupiah(sisaSetelahBayar) : new Intl.NumberFormat('id-ID').format(sisaSetelahBayar);
+                        sisaDisplay.textContent = 'Rp ' + formattedSisa;
+                        sisaDisplay.className = 'fw-bold text-danger';
+                    }
+                }
             }
+
+            window.calculateChange = calculateChange;
 
             function toggleCashCalculator() {
                 if(!accountSelect) return;
@@ -2205,12 +2246,28 @@
                 cashSection.style.display = isCash ? 'block' : 'none';
             }
 
-            if(amountInput) amountInput.addEventListener('input', calculateChange);
-            if(paidInput) paidInput.addEventListener('input', calculateChange);
+            if(amountInput) {
+                amountInput.addEventListener('input', function() {
+                    calculateChange('amount');
+                });
+            }
+            if(paidInput) {
+                paidInput.addEventListener('input', function() {
+                    calculateChange('paid');
+                });
+            }
             if(accountSelect) {
                 accountSelect.addEventListener('change', toggleCashCalculator);
                 toggleCashCalculator();
             }
+
+            const addPaymentModalEl = document.getElementById('addPaymentModal');
+            if (addPaymentModalEl) {
+                addPaymentModalEl.addEventListener('shown.bs.modal', function() {
+                    calculateChange();
+                });
+            }
+            calculateChange();
 
             // Custom Charge Calculation
             const customBase = document.getElementById('custom_base_amount');
@@ -2218,10 +2275,10 @@
             const customTotalDisplay = document.getElementById('custom_total_display');
 
             function calculateCustomTotal() {
-                const b = parseFloat(customBase.value) || 0;
-                const t = parseFloat(customTax.value) || 0;
+                const b = window.parseRupiah ? window.parseRupiah(customBase.value) : (parseFloat(customBase.value) || 0);
+                const t = window.parseRupiah ? window.parseRupiah(customTax.value) : (parseFloat(customTax.value) || 0);
                 const total = b + t;
-                customTotalDisplay.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(total);
+                customTotalDisplay.textContent = 'Rp ' + (window.formatRupiah ? window.formatRupiah(total) : new Intl.NumberFormat('id-ID').format(total));
             }
 
             if(customBase) customBase.addEventListener('input', calculateCustomTotal);
@@ -2474,6 +2531,12 @@
                     chargeOption.style.display = 'block';
                     chargeDesc.textContent = 'Kamar baru / durasi perpanjangan memiliki total lebih tinggi. Pilih tindakan:';
                     chargeAmount.textContent = '(' + formatRp(d.price_difference) + ')';
+
+                    const reason = document.getElementById('transfer_reason').value;
+                    if (reason === 'Upgrade' || reason === 'Request Tamu' || !reason) {
+                        const yesRadio = document.getElementById('charge_diff_yes');
+                        if (yesRadio) yesRadio.checked = true;
+                    }
                 } else if (d.price_difference < 0) {
                     diffEl.textContent = '-' + formatRp(Math.abs(d.price_difference));
                     diffEl.className = 'fw-bold text-success';
@@ -2484,10 +2547,21 @@
                     chargeOption.style.display = 'none';
                 }
 
+                if (d.new_checkout_date && !document.getElementById('transfer_new_checkout').value) {
+                    document.getElementById('transfer_new_checkout').value = d.new_checkout_date;
+                }
+
                 document.getElementById('transfer_preview').style.display = 'block';
                 document.getElementById('btnConfirmTransfer').disabled = false;
             });
         }
+
+        document.getElementById('transfer_reason').addEventListener('change', function() {
+            if (this.value === 'Upgrade') {
+                const yesRadio = document.getElementById('charge_diff_yes');
+                if (yesRadio) yesRadio.checked = true;
+            }
+        });
 
         document.getElementById('transfer_new_checkout').addEventListener('change', function() {
             if (currentSelectedTransferRoom) {

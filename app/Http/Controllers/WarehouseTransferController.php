@@ -7,11 +7,16 @@ use App\Models\WarehouseTransfer;
 use App\Models\WarehouseTransferItem;
 use App\Models\InventoryWarehouseStock;
 use App\Models\Inventory;
+use App\Models\InventoryMutation;
+use App\Traits\AjaxResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class WarehouseTransferController extends Controller
 {
+    use AjaxResponse;
+
     public function index()
     {
         $hotelId = active_hotel_id();
@@ -47,17 +52,18 @@ class WarehouseTransferController extends Controller
 
         DB::beginTransaction();
         try {
+            $fromWarehouse = Warehouse::findOrFail($request->from_warehouse_id);
+            $targetWarehouse = Warehouse::findOrFail($request->to_warehouse_id);
+            $isCrossBranch = $targetWarehouse->hotel_id !== active_hotel_id();
+
             $transfer = WarehouseTransfer::create([
                 'from_warehouse_id' => $request->from_warehouse_id,
                 'to_warehouse_id' => $request->to_warehouse_id,
                 'status' => 'completed',
                 'transfer_date' => now(),
-                'created_by' => auth()->id(),
+                'created_by' => Auth::id() ?? auth()->id(),
                 'notes' => $request->notes,
             ]);
-
-            $targetWarehouse = Warehouse::findOrFail($request->to_warehouse_id);
-            $isCrossBranch = $targetWarehouse->hotel_id !== active_hotel_id();
 
             foreach ($request->items as $item) {
                 $inventory = Inventory::findOrFail($item['inventory_id']);
@@ -65,10 +71,18 @@ class WarehouseTransferController extends Controller
                 $sourceStock = InventoryWarehouseStock::where('inventory_id', $inventory->id)
                     ->where('warehouse_id', $request->from_warehouse_id)
                     ->lockForUpdate()
-                    ->firstOrFail();
+                    ->first();
+
+                if (!$sourceStock) {
+                    $sourceStock = InventoryWarehouseStock::create([
+                        'inventory_id' => $inventory->id,
+                        'warehouse_id' => $request->from_warehouse_id,
+                        'stock' => max(0, (int) $inventory->stock),
+                    ]);
+                }
 
                 if ($sourceStock->stock < $item['quantity']) {
-                    throw new \Exception("Stok {$inventory->name} tidak mencukupi di gudang asal.");
+                    throw new \Exception("Stok {$inventory->name} tidak mencukupi di {$fromWarehouse->name}. Tersedia: {$sourceStock->stock}");
                 }
 
                 $sourceStock->decrement('stock', $item['quantity']);
@@ -113,13 +127,29 @@ class WarehouseTransferController extends Controller
                 if ($isCrossBranch) {
                     $targetInventory->increment('stock', $item['quantity']);
                 }
+
+                // Log into InventoryMutation so mutation history tracks this transfer
+                InventoryMutation::create([
+                    'hotel_id' => active_hotel_id() ?: ($inventory->hotel_id ?? 1),
+                    'inventory_id' => $inventory->id,
+                    'user_id' => Auth::id() ?? auth()->id(),
+                    'type' => 'transfer',
+                    'quantity' => $item['quantity'],
+                    'notes' => "Mutasi dari {$fromWarehouse->name} ke {$targetWarehouse->name}" . ($request->notes ? " - {$request->notes}" : ''),
+                    'reference_type' => WarehouseTransfer::class,
+                    'reference_id' => $transfer->id,
+                ]);
             }
 
             DB::commit();
-            return redirect()->back()->with('success', 'Transfer stok berhasil.');
+
+            return $this->ajaxOrRedirect('Mutasi stok berhasil disimpan.', redirect()->back()->getTargetUrl());
 
         } catch (\Exception $e) {
             DB::rollBack();
+            if ($this->isAjaxRequest()) {
+                return $this->ajaxError('Gagal mutasi stok: ' . $e->getMessage());
+            }
             return redirect()->back()->with('error', $e->getMessage());
         }
     }

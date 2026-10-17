@@ -93,7 +93,7 @@ class NotificationController extends Controller
             ->where('is_deposit', false)
             ->sum('amount');
         $posTotal = $booking->posOrders
-            ->where('status', 'completed')
+            ->where('status', '!=', 'cancelled')
             ->sum('total_amount');
         $grandTotal = $booking->total_price + $manualExtraTotal + $posTotal;
         $totalPaid = $booking->transactions
@@ -151,7 +151,7 @@ class NotificationController extends Controller
             ->where('is_deposit', false)
             ->sum('amount');
         $posTotal = $booking->posOrders
-            ->where('status', 'completed')
+            ->where('status', '!=', 'cancelled')
             ->sum('total_amount');
         $grandTotal = $booking->total_price + $manualExtraTotal + $posTotal;
         $totalPaid = $booking->transactions
@@ -280,7 +280,7 @@ class NotificationController extends Controller
             ->sum('amount');
 
         $posTotal = $booking->posOrders
-            ->where('status', 'completed')
+            ->where('status', '!=', 'cancelled')
             ->sum('total_amount');
 
         $grandTotal = $booking->total_price + $manualExtraTotal + $posTotal;
@@ -314,7 +314,7 @@ class NotificationController extends Controller
             ->sum('amount');
 
         $posTotal = $booking->posOrders
-            ->where('status', 'completed')
+            ->where('status', '!=', 'cancelled')
             ->sum('total_amount');
 
         $depositCharges = $booking->transactions

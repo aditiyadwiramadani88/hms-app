@@ -47,7 +47,6 @@
                             <thead class="table-light text-muted">
                                 <tr>
                                     <th scope="col" style="width: 50px;">#</th>
-                                    <th class="sort text-uppercase" data-sort="purchase_number">PO Number</th>
                                     <th class="sort text-uppercase" data-sort="supplier">Supplier</th>
                                     <th class="sort text-uppercase" data-sort="purchase_date">Date</th>
                                     <th class="sort text-uppercase" data-sort="total">Total Amount</th>
@@ -59,12 +58,11 @@
                                 @forelse($purchases ?? [] as $purchase)
                                 <tr>
                                     <th scope="row">{{ $loop->iteration }}</th>
-                                    <td class="fw-medium">
-                                        <a href="{{ route('purchases.show', $purchase->id) }}" class="text-primary">
-                                            {{ $purchase->purchase_number }}
+                                    <td>
+                                        <a href="{{ route('purchases.show', $purchase->id) }}" class="text-primary fw-medium">
+                                            {{ $purchase->supplier->name ?? 'N/A' }}
                                         </a>
                                     </td>
-                                    <td>{{ $purchase->supplier->name ?? 'N/A' }}</td>
                                     <td>{{ \Carbon\Carbon::parse($purchase->purchase_date)->format('d M Y') }}</td>
                                     <td class="fw-medium">@money($purchase->total_amount)</td>
                                     <td>
@@ -90,7 +88,7 @@
                                             </li>
                                             @can('delete transactions')
                                             <li class="list-inline-item" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete">
-                                                <a href="javascript:void(0);" class="text-danger d-inline-block" onclick="confirmDelete({{ $purchase->id }}, '{{ $purchase->purchase_number }}')">
+                                                <a href="javascript:void(0);" class="text-danger d-inline-block" onclick="confirmDelete({{ $purchase->id }}, '{{ addslashes($purchase->supplier->name ?? 'Order #' . $purchase->id) }}')">
                                                     <i class="ri-delete-bin-5-fill fs-16"></i>
                                                 </a>
                                             </li>
@@ -100,7 +98,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="7" class="text-center text-muted py-4">
+                                    <td colspan="6" class="text-center text-muted py-4">
                                         No purchases found. <a href="{{ route('purchases.create') }}" class="text-primary">Create a new purchase order</a>.
                                     </td>
                                 </tr>

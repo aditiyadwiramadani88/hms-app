@@ -5,6 +5,7 @@
 <script src="{{ URL::asset('build/js/pages/plugins/lord-icon-2.1.0.js') }}"></script>
 <script src="{{ URL::asset('build/js/plugins.js') }}"></script>
 <script src="{{ URL::asset('build/js/app.js') }}"></script>
+<script src="{{ URL::asset('js/rupiah-formatter.js') }}"></script>
 <script src="{{ URL::asset('build/js/ajax-form-handler.js') }}"></script>
 @yield('script')
 @yield('script-bottom')

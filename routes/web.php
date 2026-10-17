@@ -384,6 +384,13 @@ Route::prefix('admin')->group(function () {
     Route::get('/pos/export/pdf', [PosController::class, 'exportPdf'])->name('pos.export.pdf')->middleware('permission:manage pos');
     Route::get('/pos/create', [PosController::class, 'create'])->name('pos.create')->middleware('permission:manage pos');
     Route::post('/pos', [PosController::class, 'store'])->name('pos.store')->middleware('permission:manage pos');
+
+    // Rental POS (Specialized for Rental / Sewa Items)
+    Route::get('/pos/rental', [\App\Http\Controllers\RentalPosController::class, 'index'])->name('pos.rental.index')->middleware('permission:manage pos');
+    Route::get('/pos/rental/create', [\App\Http\Controllers\RentalPosController::class, 'create'])->name('pos.rental.create')->middleware('permission:manage pos');
+    Route::post('/pos/rental', [\App\Http\Controllers\RentalPosController::class, 'store'])->name('pos.rental.store')->middleware('permission:manage pos');
+    Route::post('/pos/rental/{order}/return', [\App\Http\Controllers\RentalPosController::class, 'returnRental'])->name('pos.rental.return')->middleware('permission:manage pos');
+
     Route::get('/pos/{order}', [PosController::class, 'show'])->name('pos.show')->middleware('permission:manage pos');
     Route::post('/pos/{order}/add-item', [PosController::class, 'addItem'])->name('pos.add-item')->middleware('permission:manage pos');
     Route::delete('/pos/{order}', [PosController::class, 'destroy'])->name('pos.destroy')->middleware('permission:delete transactions');
@@ -424,13 +431,14 @@ Route::prefix('admin')->group(function () {
     Route::post('/inventory/{inventory}/mutation', [InventoryController::class, 'mutation'])->name('inventory.mutation')->middleware('permission:manage pos');
     
     // Multi-Warehouse & Transfer
-    Route::get('/warehouses', [\App\Http\Controllers\WarehouseController::class, 'index'])->name('warehouse.index')->middleware('permission:manage warehouse');
+    Route::get('/warehouses', [\App\Http\Controllers\WarehouseController::class, 'index'])->name('warehouse.index')->middleware('permission:manage warehouse|manage pos');
+    Route::get('/warehouses/{warehouse}', [\App\Http\Controllers\WarehouseController::class, 'show'])->name('warehouse.show')->middleware('permission:manage warehouse|manage pos');
     Route::post('/warehouses', [\App\Http\Controllers\WarehouseController::class, 'store'])->name('warehouse.store')->middleware('permission:manage warehouse');
     Route::put('/warehouses/{warehouse}', [\App\Http\Controllers\WarehouseController::class, 'update'])->name('warehouse.update')->middleware('permission:manage warehouse');
     Route::delete('/warehouses/{warehouse}', [\App\Http\Controllers\WarehouseController::class, 'destroy'])->name('warehouse.destroy')->middleware('permission:manage warehouse');
     
     Route::get('/warehouse-transfers', [\App\Http\Controllers\WarehouseTransferController::class, 'index'])->name('warehouse.transfer.index')->middleware('permission:manage warehouse');
-    Route::post('/warehouse-transfers', [\App\Http\Controllers\WarehouseTransferController::class, 'store'])->name('warehouse.transfer.store')->middleware('permission:manage warehouse');
+    Route::post('/warehouse-transfers', [\App\Http\Controllers\WarehouseTransferController::class, 'store'])->name('warehouse.transfer.store')->middleware('permission:manage warehouse|manage pos');
 
     // Housekeeping
     Route::get('/housekeeping', [HousekeepingController::class, 'index'])->name('housekeeping.index')->middleware('permission:manage housekeeping');

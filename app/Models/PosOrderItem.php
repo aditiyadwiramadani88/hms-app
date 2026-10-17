@@ -16,10 +16,14 @@ class PosOrderItem extends Model
         'price_per_unit',
         'cost_price',
         'subtotal',
+        'returned_quantity',
+        'returned_at',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
+        'returned_quantity' => 'integer',
+        'returned_at' => 'datetime',
         'price_per_unit' => 'decimal:2',
         'cost_price' => 'decimal:2',
         'subtotal' => 'decimal:2',
@@ -27,7 +31,12 @@ class PosOrderItem extends Model
 
     public function posOrder()
     {
-        return $this->belongsTo(PosOrder::class);
+        return $this->belongsTo(PosOrder::class, 'pos_order_id');
+    }
+
+    public function order()
+    {
+        return $this->belongsTo(PosOrder::class, 'pos_order_id');
     }
 
     public function inventory()

@@ -119,7 +119,7 @@
                                 <select class="form-select" name="room_id" id="room_select">
                                     <option value="">Walk-in / No Room</option>
                                     @foreach($occupiedBookings as $occupiedBooking)
-                                        <option value="{{ $occupiedBooking->room->id }}" data-booking="{{ $occupiedBooking->id }}" data-guest="{{ $occupiedBooking->guest->name ?? '' }}">
+                                        <option value="{{ $occupiedBooking->room->id }}" data-booking="{{ $occupiedBooking->id }}" data-guest-id="{{ $occupiedBooking->guest_id }}" data-guest="{{ $occupiedBooking->guest->name ?? '' }}">
                                             Room {{ $occupiedBooking->room->room_number }} — {{ $occupiedBooking->room->roomType->name ?? '' }} ({{ $occupiedBooking->guest->name ?? 'No guest' }})
                                         </option>
                                     @endforeach
@@ -257,12 +257,24 @@
         $(document).ready(function () {
             $('#room_select').select2();
 
+            function syncBookingId() {
+                const selected = $('#room_select').find('option:selected');
+                const bookingId = selected.data('booking') || '';
+                $('#booking_id_hidden').val(bookingId);
+                const guestId = selected.data('guest-id');
+                if (guestId && $('select[name="guest_id"]').length) {
+                    $('select[name="guest_id"]').val(guestId);
+                }
+            }
+
             // Keep booking_id in sync with the chosen room so "Charge to Room"
             // has something to attach to -- the select only carries room_id,
             // booking_id lives in the option's data-booking attribute.
-            $('#room_select').on('change', function () {
-                const selected = $(this).find('option:selected');
-                $('#booking_id_hidden').val(selected.data('booking') || '');
+            $('#room_select').on('change select2:select', syncBookingId);
+            syncBookingId();
+
+            $('#posCreateForm').on('submit', function () {
+                syncBookingId();
             });
         });
     </script>

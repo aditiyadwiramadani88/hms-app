@@ -112,12 +112,14 @@ class InventoryController extends Controller
 
     public function show(Inventory $inventory)
     {
+        $inventory->load(['warehouseStocks.warehouse']);
+        $warehouses = \App\Models\Warehouse::where('hotel_id', active_hotel_id() ?: ($inventory->hotel_id ?? 1))->get();
         $mutations = InventoryMutation::where('inventory_id', $inventory->id)
             ->with('user')
             ->latest()
             ->paginate(20);
 
-        return view('pos.inventory.show', compact('inventory', 'mutations'));
+        return view('pos.inventory.show', compact('inventory', 'mutations', 'warehouses'));
     }
 
     public function edit(Inventory $inventory)
@@ -212,12 +214,74 @@ class InventoryController extends Controller
     {
         try {
             $validated = $request->validate([
-                'type' => 'required|in:in,out,adjustment',
+                'type' => 'required|in:in,out,adjustment,transfer',
                 'quantity' => 'required|integer|min:1',
                 'notes' => 'nullable|string|max:500',
+                'warehouse_id' => 'nullable|exists:warehouses,id',
+                'from_warehouse_id' => 'required_if:type,transfer|nullable|exists:warehouses,id',
+                'to_warehouse_id' => 'required_if:type,transfer|nullable|exists:warehouses,id|different:from_warehouse_id',
             ]);
 
             return \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $inventory) {
+                if ($validated['type'] === 'transfer') {
+                    $fromWh = \App\Models\Warehouse::findOrFail($validated['from_warehouse_id']);
+                    $toWh = \App\Models\Warehouse::findOrFail($validated['to_warehouse_id']);
+
+                    $sourceStock = \App\Models\InventoryWarehouseStock::where('inventory_id', $inventory->id)
+                        ->where('warehouse_id', $fromWh->id)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (!$sourceStock) {
+                        $sourceStock = \App\Models\InventoryWarehouseStock::create([
+                            'inventory_id' => $inventory->id,
+                            'warehouse_id' => $fromWh->id,
+                            'stock' => max(0, (int) $inventory->stock),
+                        ]);
+                    }
+
+                    if ($sourceStock->stock < $validated['quantity']) {
+                        throw new \Exception("Stok {$inventory->name} tidak mencukupi di {$fromWh->name}. Tersedia: {$sourceStock->stock}");
+                    }
+
+                    $sourceStock->decrement('stock', $validated['quantity']);
+
+                    $targetStock = \App\Models\InventoryWarehouseStock::firstOrCreate([
+                        'inventory_id' => $inventory->id,
+                        'warehouse_id' => $toWh->id,
+                    ], ['stock' => 0]);
+
+                    $targetStock->increment('stock', $validated['quantity']);
+
+                    $transfer = \App\Models\WarehouseTransfer::create([
+                        'from_warehouse_id' => $fromWh->id,
+                        'to_warehouse_id' => $toWh->id,
+                        'status' => 'completed',
+                        'transfer_date' => now(),
+                        'created_by' => Auth::id() ?? auth()->id(),
+                        'notes' => $validated['notes'],
+                    ]);
+
+                    \App\Models\WarehouseTransferItem::create([
+                        'warehouse_transfer_id' => $transfer->id,
+                        'inventory_id' => $inventory->id,
+                        'quantity' => $validated['quantity'],
+                    ]);
+
+                    $mutation = InventoryMutation::create([
+                        'hotel_id' => active_hotel_id() ?: ($inventory->hotel_id ?? 1),
+                        'inventory_id' => $inventory->id,
+                        'user_id' => Auth::id() ?? auth()->id(),
+                        'type' => 'transfer',
+                        'quantity' => $validated['quantity'],
+                        'notes' => "Mutasi dari {$fromWh->name} ke {$toWh->name}" . ($validated['notes'] ? " - {$validated['notes']}" : ''),
+                        'reference_type' => \App\Models\WarehouseTransfer::class,
+                        'reference_id' => $transfer->id,
+                    ]);
+
+                    return $this->ajaxOrRedirect('Mutasi stok berhasil disimpan.', route('inventory.show', $inventory), $mutation);
+                }
+
                 $oldStock = $inventory->stock;
 
                 if ($validated['type'] === 'in') {
@@ -237,31 +301,38 @@ class InventoryController extends Controller
 
                 $inventory->save();
 
-                $mutation = InventoryMutation::create([
-                    'hotel_id' => active_hotel_id(),
-                    'inventory_id' => $inventory->id,
-                    'user_id' => Auth::id(),
-                    'type' => $validated['type'],
-                    'quantity' => $validated['type'] === 'adjustment' ? $validated['quantity'] : abs($inventory->stock - $oldStock),
-                    'notes' => $validated['notes'],
-                ]);
+                $targetWarehouseId = $validated['warehouse_id'] ?? null;
+                if (!$targetWarehouseId) {
+                    $defaultWarehouse = \App\Models\Warehouse::where('hotel_id', active_hotel_id() ?: ($inventory->hotel_id ?? 1))->first();
+                    $targetWarehouseId = $defaultWarehouse?->id;
+                }
 
-                $defaultWarehouse = \App\Models\Warehouse::where('hotel_id', active_hotel_id())->first();
-                if ($defaultWarehouse) {
+                $targetWhName = '';
+                if ($targetWarehouseId) {
                     $stockObj = \App\Models\InventoryWarehouseStock::firstOrCreate([
                         'inventory_id' => $inventory->id,
-                        'warehouse_id' => $defaultWarehouse->id,
+                        'warehouse_id' => $targetWarehouseId,
                     ], ['stock' => 0]);
                     
                     if ($validated['type'] === 'in') {
                         $stockObj->increment('stock', $validated['quantity']);
                     } elseif ($validated['type'] === 'out') {
-                        $stockObj->decrement('stock', $validated['quantity']);
+                        $stockObj->decrement('stock', min($stockObj->stock, $validated['quantity']));
                     } else {
                         $diff = $inventory->stock - $oldStock;
                         $stockObj->increment('stock', $diff);
                     }
+                    $targetWhName = " (" . ($stockObj->warehouse->name ?? 'Gudang') . ")";
                 }
+
+                $mutation = InventoryMutation::create([
+                    'hotel_id' => active_hotel_id() ?: ($inventory->hotel_id ?? 1),
+                    'inventory_id' => $inventory->id,
+                    'user_id' => Auth::id() ?? auth()->id(),
+                    'type' => $validated['type'],
+                    'quantity' => $validated['type'] === 'adjustment' ? $validated['quantity'] : abs($inventory->stock - $oldStock),
+                    'notes' => ($validated['notes'] ?? '') . $targetWhName,
+                ]);
 
                 return $this->ajaxOrRedirect('Mutation recorded successfully.', route('inventory.show', $inventory), $mutation);
             });

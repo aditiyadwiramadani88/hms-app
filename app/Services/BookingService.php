@@ -406,7 +406,7 @@ class BookingService
             // Calculate final bill including any POS charges
             $posCharges = $booking->posOrders()
                 ->where('payment_status', 'unpaid')
-                ->where('status', 'completed')
+                ->where('status', '!=', 'cancelled')
                 ->sum('total_amount');
 
             $additionalCharges = Transaction::where('booking_id', $booking->id)
@@ -443,7 +443,7 @@ class BookingService
             // Calculate final bill including any POS charges
             $posCharges = $booking->posOrders()
                 ->where('payment_status', 'unpaid')
-                ->where('status', 'completed')
+                ->where('status', '!=', 'cancelled')
                 ->sum('total_amount');
 
             $additionalCharges = Transaction::where('booking_id', $booking->id)
@@ -467,8 +467,13 @@ class BookingService
                 
                 // Allow manual override of refund amount
                 $manualRefund = request('manual_refund_amount');
-                if ($manualRefund !== null && is_numeric($manualRefund) && (float) $manualRefund >= 0) {
-                    $refundAmount = (float) $manualRefund;
+                if ($manualRefund !== null) {
+                    if (is_string($manualRefund)) {
+                        $manualRefund = preg_replace('/[^0-9]/', '', $manualRefund);
+                    }
+                    if (is_numeric($manualRefund) && (float) $manualRefund >= 0) {
+                        $refundAmount = (float) $manualRefund;
+                    }
                 }
                 
                 $bankAccountId = request('bank_account_id');
@@ -526,9 +531,9 @@ class BookingService
             // checkout bill above and has now been paid via the room, so mark them
             // paid (otherwise they keep showing 'unpaid' in the POS list forever).
             $booking->posOrders()
-                ->where('status', 'completed')
+                ->where('status', '!=', 'cancelled')
                 ->where('payment_status', 'unpaid')
-                ->update(['payment_status' => 'paid']);
+                ->update(['payment_status' => 'paid', 'status' => 'completed']);
 
             // Mark room as Checkout after checkout (Only for real rooms)
             if (!$booking->is_custom && $booking->room) {

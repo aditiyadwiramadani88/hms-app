@@ -75,10 +75,10 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th scope="col">Item</th>
-                                        <th scope="col" style="width: 150px;">Quantity</th>
-                                        <th scope="col" style="width: 200px;">Unit Price</th>
+                                        <th scope="col" style="width: 140px;">Quantity</th>
+                                        <th scope="col" style="width: 260px;">Unit Price (Total)</th>
                                         <th scope="col" class="text-end" style="width: 150px;">Subtotal</th>
-                                        <th scope="col" class="text-end" style="width: 100px;">Action</th>
+                                        <th scope="col" class="text-end" style="width: 80px;">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody id="items-list">
@@ -184,6 +184,14 @@
                 $(this).val(null).trigger('change');
             });
 
+            function formatNumber(num) {
+                return new Intl.NumberFormat('id-ID').format(Math.round(num || 0));
+            }
+
+            function formatRupiah(amount) {
+                return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount || 0);
+            }
+
             function addItem(id, name, price) {
                 // Prevent adding the same item twice
                 if ($(`#item-row-${id}`).length > 0) {
@@ -194,19 +202,31 @@
                 const numericPrice = parseFloat(price) || 0;
 
                 const newRow = `
-                    <tr id="item-row-${id}">
+                    <tr id="item-row-${id}" data-base-price="${numericPrice}">
                         <td>
                             <input type="hidden" name="items[${itemCounter}][inventory_id]" value="${id}">
+                            <input type="hidden" name="items[${itemCounter}][is_total_price]" value="1">
+                            <input type="hidden" class="item-unit-price-hidden" name="items[${itemCounter}][unit_price]" value="${numericPrice}">
                             <span class="fw-medium">${name}</span>
+                            <div class="text-muted fs-11 mt-1">
+                                <span class="badge bg-light text-secondary border">Harga Satuan: Rp ${formatNumber(numericPrice)}</span>
+                            </div>
                         </td>
                         <td>
                             <input type="number" class="form-control item-quantity" name="items[${itemCounter}][quantity]" value="1" min="1" step="1">
                         </td>
                         <td>
-                             <div class="input-group">
+                            <div class="input-group input-group-sm">
                                 <span class="input-group-text">Rp</span>
                                 <input type="number" class="form-control item-price" name="items[${itemCounter}][price]" value="${numericPrice}" min="0" step="100">
-                             </div>
+                                <button type="button" class="btn btn-outline-secondary btn-reset-price" title="Kembalikan ke hitungan harga master" style="display:none;">
+                                    <i class="ri-refresh-line"></i>
+                                </button>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                <small class="text-muted item-calc-info fs-11">Auto: 1 × Rp ${formatNumber(numericPrice)}</small>
+                                <span class="badge bg-warning-subtle text-warning border border-warning-subtle item-manual-badge fs-10" style="display:none;">Edit Manual</span>
+                            </div>
                         </td>
                         <td class="text-end item-subtotal fw-semibold">
                             ${formatRupiah(numericPrice)}
@@ -228,7 +248,72 @@
                 updateTotal();
             });
 
-            $(document).on('input change', '.item-quantity, .item-price', function() {
+            // Recalculate price when quantity changes
+            $(document).on('input change', '.item-quantity', function() {
+                const row = $(this).closest('tr');
+                const quantity = Math.max(1, parseFloat(row.find('.item-quantity').val()) || 1);
+                const basePrice = parseFloat(row.data('base-price')) || 0;
+                const isManual = row.data('is-manual') === true;
+
+                if (isManual) {
+                    const manualUnitRate = parseFloat(row.data('manual-unit-rate')) || basePrice;
+                    const newTotal = Math.round(manualUnitRate * quantity);
+                    row.find('.item-price').val(newTotal);
+                    row.find('.item-unit-price-hidden').val(manualUnitRate);
+                    row.find('.item-calc-info').text('Manual: ' + quantity + ' × Rp ' + formatNumber(manualUnitRate));
+                } else {
+                    const newTotal = Math.round(basePrice * quantity);
+                    row.find('.item-price').val(newTotal);
+                    row.find('.item-unit-price-hidden').val(basePrice);
+                    row.find('.item-calc-info').text('Auto: ' + quantity + ' × Rp ' + formatNumber(basePrice));
+                }
+
+                updateTotal();
+            });
+
+            // Handle manual price editing
+            $(document).on('input change', '.item-price', function() {
+                const row = $(this).closest('tr');
+                const quantity = Math.max(1, parseFloat(row.find('.item-quantity').val()) || 1);
+                const enteredTotal = parseFloat(row.find('.item-price').val()) || 0;
+                const basePrice = parseFloat(row.data('base-price')) || 0;
+                const autoExpected = Math.round(basePrice * quantity);
+
+                if (Math.abs(enteredTotal - autoExpected) > 0.01) {
+                    row.data('is-manual', true);
+                    const unitRate = quantity > 0 ? (enteredTotal / quantity) : enteredTotal;
+                    row.data('manual-unit-rate', unitRate);
+                    row.find('.item-unit-price-hidden').val(unitRate);
+                    row.find('.item-manual-badge').show();
+                    row.find('.btn-reset-price').show();
+                    row.find('.item-calc-info').text('Manual: @ Rp ' + formatNumber(unitRate) + ' / unit');
+                } else {
+                    row.data('is-manual', false);
+                    row.removeData('manual-unit-rate');
+                    row.find('.item-unit-price-hidden').val(basePrice);
+                    row.find('.item-manual-badge').hide();
+                    row.find('.btn-reset-price').hide();
+                    row.find('.item-calc-info').text('Auto: ' + quantity + ' × Rp ' + formatNumber(basePrice));
+                }
+
+                updateTotal();
+            });
+
+            // Reset manual price back to auto master calculation
+            $(document).on('click', '.btn-reset-price', function() {
+                const row = $(this).closest('tr');
+                const quantity = Math.max(1, parseFloat(row.find('.item-quantity').val()) || 1);
+                const basePrice = parseFloat(row.data('base-price')) || 0;
+                const autoTotal = Math.round(basePrice * quantity);
+
+                row.data('is-manual', false);
+                row.removeData('manual-unit-rate');
+                row.find('.item-price').val(autoTotal);
+                row.find('.item-unit-price-hidden').val(basePrice);
+                row.find('.item-manual-badge').hide();
+                row.find('.btn-reset-price').hide();
+                row.find('.item-calc-info').text('Auto: ' + quantity + ' × Rp ' + formatNumber(basePrice));
+
                 updateTotal();
             });
 
@@ -236,17 +321,11 @@
                 let total = 0;
                 $('#items-list tr').each(function() {
                     const row = $(this);
-                    const quantity = parseFloat(row.find('.item-quantity').val()) || 0;
-                    const price = parseFloat(row.find('.item-price').val()) || 0;
-                    const subtotal = quantity * price;
-                    row.find('.item-subtotal').text(formatRupiah(subtotal));
-                    total += subtotal;
+                    const lineTotal = parseFloat(row.find('.item-price').val()) || 0;
+                    row.find('.item-subtotal').text(formatRupiah(lineTotal));
+                    total += lineTotal;
                 });
                 $('#total-amount').text(formatRupiah(total));
-            }
-            
-            function formatRupiah(amount) {
-                return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
             }
 
             // Validate that items exist before submit
