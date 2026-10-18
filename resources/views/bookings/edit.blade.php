@@ -248,7 +248,18 @@
                                 <i class="ri-search-line search-icon"></i>
                             </div>
                         </div>
-                        <div class="col-md-4"><select class="form-select" id="filter_room_type" onchange="loadAvailableRooms()"><option value="">All Types</option>@foreach($roomTypes as $type)<option value="{{ $type->id }}">{{ $type->name }}</option>@endforeach</select></div>
+                        <div class="col-md-4">
+                            <select class="form-select" id="filter_room_type" onchange="loadAvailableRooms()">
+                                <option value="">All Types</option>
+                                @foreach($roomTypes as $type)
+                                    <option value="{{ $type->id }}"
+                                            data-has-kos="{{ $type->rooms()->where('is_kos', true)->exists() ? '1' : '0' }}"
+                                            data-has-daily="{{ $type->rooms()->where('is_kos', false)->exists() ? '1' : '0' }}">
+                                        {{ $type->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
                     </div>
                     <div class="row g-3" id="room_list_container"></div>
                 </div>
@@ -441,8 +452,34 @@
                 loadAvailableRooms();
             };
 
+            function syncRoomTypeFilter(stayType) {
+                const select = document.getElementById('filter_room_type');
+                if (!select) return;
+                let currentValHidden = false;
+                Array.from(select.options).forEach(opt => {
+                    if (!opt.value) return; // 'All Types'
+                    const hasKos = opt.getAttribute('data-has-kos') === '1';
+                    const hasDaily = opt.getAttribute('data-has-daily') === '1';
+                    let show = true;
+                    if (stayType === 'monthly' || stayType === 'yearly') {
+                        show = hasKos;
+                    } else {
+                        show = hasDaily;
+                    }
+                    opt.style.display = show ? '' : 'none';
+                    opt.disabled = !show;
+                    if (!show && select.value === opt.value) {
+                        currentValHidden = true;
+                    }
+                });
+                if (currentValHidden) {
+                    select.value = '';
+                }
+            }
+
             window.loadAvailableRooms = function() {
                 const stayType = document.querySelector('input[name="stay_type"]:checked').value;
+                syncRoomTypeFilter(stayType);
                 const params = new URLSearchParams({
                     check_in: checkIn.value,
                     check_out: checkOut.value,
@@ -458,7 +495,10 @@
                     rooms.forEach(room => {
                         let priceSection = '';
                         let hasBreakfast = false;
-                        if (stayType === 'monthly') {
+                        if (stayType === 'yearly') {
+                            const yp = (room.yearly_price || room.price_kos || 0);
+                            priceSection = `<button class="btn btn-sm btn-soft-success w-100 mt-2" onclick="selectRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${yp}, 0, 'public')">Pilih (Tahunan): ${window.formatRupiah(yp)} / thn</button>`;
+                        } else if (stayType === 'monthly') {
                             priceSection = `<button class="btn btn-sm btn-soft-success w-100 mt-2" onclick="selectRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_kos}, 0, 'public')">Pilih (Kos): ${window.formatRupiah(room.price_kos)}</button>`;
                         } else {
                             const bfPublic = room.price_breakfast_public || 0;

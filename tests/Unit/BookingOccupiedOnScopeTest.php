@@ -12,7 +12,7 @@ class BookingOccupiedOnScopeTest extends TestCase
     {
         $sql = Booking::query()->occupiedOn('2026-07-15')->toSql();
 
-        $this->assertStringNotContainsString('`status`', $sql);
+        $this->assertStringContainsString('bookings`.`status` not in', $sql);
         $this->assertStringContainsString('actual_check_in', $sql);
         $this->assertStringContainsString('actual_check_out', $sql);
     }

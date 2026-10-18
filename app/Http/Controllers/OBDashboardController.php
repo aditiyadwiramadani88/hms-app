@@ -36,6 +36,11 @@ class OBDashboardController extends Controller
             $task->refresh();
         }
 
+        // Auto-populate checklist items if empty (e.g. legacy/manually created tasks)
+        if ($task->checklistItems()->count() === 0) {
+            $this->taskService->populateChecklistForTask($task);
+        }
+
         $task->load(['room.roomType', 'checklistItems' => fn($q) => $q->orderBy('sort_order'), 'photos']);
         $progress = $this->taskService->calculateProgress($task);
 

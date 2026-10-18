@@ -215,4 +215,22 @@ return [
     "profit_realized_desc" => "Profit from realized revenue",
     "room_revenue" => "Room Revenue",
     "pos_revenue" => "POS Revenue",
+
+    // Room Transfer Status Labels
+    "room_status_occupied" => "Occupied",
+    "room_status_dirty" => "Dirty",
+    "room_status_checkout" => "Checkout",
+    "room_status_refresh" => "Needs Refresh",
+    "room_status_maintenance" => "Maintenance",
+    "room_status_out_of_order" => "Out of Order",
+    "room_status_closed" => "Closed",
+    "room_status_available" => "Available",
+    "room_status_clean" => "Clean",
+    "room_status_booked" => "Booked",
+    "room_block_occupied" => "Currently occupied",
+    "room_block_dirty" => "Not yet cleaned",
+    "room_block_maintenance" => "Under maintenance",
+    "room_block_booked" => "Has other reservation",
+    "room_label" => "Room",
+    "no_rooms_found" => "No rooms found for this type.",
 ];

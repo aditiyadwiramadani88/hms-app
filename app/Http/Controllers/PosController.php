@@ -161,7 +161,7 @@ class PosController extends Controller
         // bank accounts (not a real bank_accounts row) — normalize it before
         // validation, payment_method already carries 'charge_to_room' separately.
         if ($request->input('bank_account_id') === 'charge_to_room') {
-            $request->merge(['bank_account_id' => null]);
+            $request->merge(['bank_account_id' => null, 'payment_method' => 'charge_to_room']);
         }
 
         $validated = $request->validate([
@@ -179,6 +179,35 @@ class PosController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
             'items.*.price_per_unit' => 'required|numeric|min:0',
         ]);
+
+        // Auto-resolve booking_id and guest_id from room_id if room_id is present
+        if (!empty($validated['room_id']) && empty($validated['booking_id'])) {
+            $activeBooking = Booking::withoutGlobalScopes()->where('room_id', $validated['room_id'])
+                ->where('status', 'checked_in')
+                ->latest()
+                ->first();
+            if ($activeBooking) {
+                $validated['booking_id'] = $activeBooking->id;
+                if (empty($validated['guest_id'])) {
+                    $validated['guest_id'] = $activeBooking->guest_id;
+                }
+            }
+        } elseif (!empty($validated['booking_id'])) {
+            $activeBooking = Booking::find($validated['booking_id']);
+            if ($activeBooking) {
+                if (empty($validated['room_id'])) {
+                    $validated['room_id'] = $activeBooking->room_id;
+                }
+                if (empty($validated['guest_id'])) {
+                    $validated['guest_id'] = $activeBooking->guest_id;
+                }
+            }
+        }
+
+        // If order has a booking and no payment account is chosen, default to charge_to_room
+        if (!empty($validated['booking_id']) && empty($validated['bank_account_id']) && empty($validated['payment_method'])) {
+            $validated['payment_method'] = 'charge_to_room';
+        }
 
         try {
             $orderData = [
@@ -259,6 +288,10 @@ class PosController extends Controller
      */
     public function processPayment(Request $request, PosOrder $order)
     {
+        if ($request->filled('amount') && is_string($request->amount)) {
+            $request->merge(['amount' => preg_replace('/[^0-9]/', '', $request->amount)]);
+        }
+
         $validated = $request->validate([
             'bank_account_id' => 'required|exists:bank_accounts,id',
             'amount' => 'required|numeric|min:0',

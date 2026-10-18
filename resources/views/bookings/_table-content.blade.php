@@ -15,17 +15,13 @@
                     $currentDir = request('sort_dir', 'desc');
                     $baseParams = request()->except(['sort_by', 'sort_dir', 'page']);
                 @endphp
-                <th class="text-uppercase" style="cursor:pointer;" onclick="sortBy('id')">
-                    Booking ID
-                    @if($currentSort === 'id') <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill"></i> @endif
+                <th class="text-uppercase" style="cursor:pointer;" onclick="sortBy('room_number')">
+                    Room ID
+                    @if($currentSort === 'room_number' || $currentSort === 'room_id') <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill"></i> @endif
                 </th>
                 <th class="text-uppercase" style="cursor:pointer;" onclick="sortBy('guest_name')">
                     Guest Name
                     @if($currentSort === 'guest_name') <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill"></i> @endif
-                </th>
-                <th class="text-uppercase" style="cursor:pointer;" onclick="sortBy('room_number')">
-                    Room
-                    @if($currentSort === 'room_number') <i class="ri-arrow-{{ $currentDir === 'asc' ? 'up' : 'down' }}-s-fill"></i> @endif
                 </th>
                 <th class="text-uppercase" style="cursor:pointer;" onclick="sortBy('created_at')">
                     Tgl Booking
@@ -70,10 +66,26 @@
                         <input class="form-check-input" type="checkbox" name="checkAll" value="{{ $booking->id }}">
                     </div>
                 </th>
-                <td class="fw-medium">
-                    <a href="{{ route('bookings.show', $booking->id) }}" class="text-primary">
-                        #{{ $booking->booking_number ?? $booking->id }}
-                    </a>
+                <td>
+                    @if($booking->is_custom)
+                        <a href="{{ route('bookings.show', $booking->id) }}" class="text-info fw-semibold" title="Lihat Detail Booking">
+                            <i class="ri-edit-box-line me-1"></i>{{ $booking->custom_room_name }}
+                        </a>
+                    @else
+                        <a href="{{ route('bookings.show', $booking->id) }}" class="fw-bold text-primary fs-14" title="Lihat Detail Booking #{{ $booking->booking_number ?? $booking->id }}">
+                            {{ $booking->room->room_number ?? 'N/A' }}
+                        </a>
+                    @endif
+                    @if($booking->stay_type === 'monthly')
+                        <span class="badge bg-primary-subtle text-primary ms-1">Kos</span>
+                    @elseif($booking->stay_type === 'yearly')
+                        <span class="badge bg-info-subtle text-info ms-1">Tahunan</span>
+                    @else
+                        <span class="badge bg-secondary-subtle text-secondary ms-1">Harian</span>
+                    @endif
+                    @if(!$booking->is_custom && $booking->room?->roomType)
+                        <div class="text-muted fs-11 mt-1">{{ $booking->room->roomType->name }}</div>
+                    @endif
                 </td>
                 <td>
                     <div class="d-flex align-items-center">
@@ -90,20 +102,6 @@
                             </a>
                         </div>
                     </div>
-                </td>
-                <td>
-                    @if($booking->is_custom)
-                        <span class="text-info fw-medium"><i class="ri-edit-box-line me-1"></i>{{ $booking->custom_room_name }}</span>
-                    @else
-                        {{ $booking->room->room_number ?? 'N/A' }}
-                    @endif
-                    @if($booking->stay_type === 'monthly')
-                        <span class="badge bg-primary-subtle text-primary ms-1">Kos</span>
-                    @elseif($booking->stay_type === 'yearly')
-                        <span class="badge bg-info-subtle text-info ms-1">Tahunan</span>
-                    @else
-                        <span class="badge bg-secondary-subtle text-secondary ms-1">Harian</span>
-                    @endif
                 </td>                                        
                 <td>
                     <span class="text-muted">{{ $booking->created_at->format('d/m/Y') }}</span>
@@ -240,7 +238,7 @@
             </tr>
             @empty
             <tr>
-                <td colspan="10" class="text-center text-muted py-4">
+                <td colspan="13" class="text-center text-muted py-4">
                     <i class="ri-calendar-close-line fs-1 d-block mb-2"></i>
                     No bookings found. <a href="{{ route('bookings.create') }}" class="text-primary">Create a new booking</a> to get started.
                 </td>

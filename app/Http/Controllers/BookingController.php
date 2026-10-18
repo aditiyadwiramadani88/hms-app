@@ -69,9 +69,10 @@ class BookingController extends Controller
             ->addSelect([
                 'unpaid_pos_total' => \App\Models\PosOrder::selectRaw('COALESCE(SUM(total_amount), 0)')
                     ->whereColumn('booking_id', 'bookings.id')
-                    ->where('status', 'completed')
+                    ->where('status', '!=', 'cancelled')
                     ->where('payment_status', 'unpaid')
                     ->limit(1),
+
                 'manual_extra_total' => \App\Models\Transaction::selectRaw('COALESCE(SUM(amount), 0)')
                     ->whereColumn('booking_id', 'bookings.id')
                     ->where('type', 'charge')
@@ -183,7 +184,7 @@ class BookingController extends Controller
         $sortDir = $request->get("sort_dir", "desc");
         $sortDir = in_array($sortDir, ["asc", "desc"]) ? $sortDir : "desc";
 
-        if ($sortBy === "room_number") {
+        if (in_array($sortBy, ["room_number", "room_id"])) {
             $query
                 ->leftJoin("rooms", "bookings.room_id", "=", "rooms.id")
                 ->orderBy("rooms.room_number", $sortDir);
@@ -270,10 +271,14 @@ class BookingController extends Controller
         $rooms = collect();
         $taxPercentage =
             \App\Models\Hotel::find(active_hotel_id())->tax_percentage ?? 0;
+        $bookingSources = \App\Models\BookingSource::where("hotel_id", active_hotel_id())
+            ->where("is_active", true)
+            ->orderBy("name")
+            ->get(["id", "name", "color"]);
 
         return view(
             "bookings.create",
-            compact("rooms", "roomTypes", "taxPercentage", "guestCategories"),
+            compact("rooms", "roomTypes", "taxPercentage", "guestCategories", "bookingSources"),
         );
     }
 
@@ -506,7 +511,7 @@ class BookingController extends Controller
                     fn($q) => $q->where("room_type_id", $roomTypeId),
                 )
                 ->when(
-                    $stayType === "monthly",
+                    in_array($stayType, ["monthly", "yearly"]),
                     fn($q) => $q->where("is_kos", true),
                 )
                 ->orderByRaw('CAST(room_number AS UNSIGNED) ASC')
@@ -696,9 +701,12 @@ class BookingController extends Controller
             "bank_account_id" => "nullable|exists:bank_accounts,id",
             "exclude_tax" => "nullable|boolean",
             "source" => "nullable|string",
-            "booking_source_id" => "nullable|exists:booking_sources,id",
+            "booking_source_id" => "required|exists:booking_sources,id",
             "include_breakfast" => "nullable|boolean",
             "tier_applied" => "nullable|string|in:public,sales,high_season",
+        ], [
+            "booking_source_id.required" => "Sumber booking wajib dipilih.",
+            "booking_source_id.exists" => "Sumber booking yang dipilih tidak valid.",
         ]);
 
         if ($request->filled("special_requests")) {
@@ -747,6 +755,107 @@ class BookingController extends Controller
             "roomTransfers.transferredBy",
         ]);
 
+        // Auto-heal incomplete or discrepant pricing_breakdown (e.g. from extension when initial breakdown was empty)
+        if ($booking->stay_type !== 'monthly' && is_array($booking->pricing_breakdown) && !in_array($booking->status, ['cancelled', 'no_show'])) {
+            $nightlyEntries = collect($booking->pricing_breakdown)
+                ->filter(fn($d) => is_array($d) && isset($d['price']));
+            $totalNights = $booking->total_nights;
+
+            // Case A: Missing original nights (breakdown has fewer nights than actual duration)
+            if ($nightlyEntries->isNotEmpty() && $nightlyEntries->count() < $totalNights) {
+                $existingDates = $nightlyEntries->pluck('date')->filter()->toArray();
+                $firstNight = $nightlyEntries->first();
+                $rate = (float) ($firstNight['price'] ?? 0);
+                if ($rate <= 0) {
+                    $rate = (float) ($booking->room?->price_public ?? $booking->room?->roomType?->base_price ?? 0);
+                }
+
+                $bd = $booking->pricing_breakdown;
+                for ($i = 0; $i < $totalNights; $i++) {
+                    $curDate = $booking->check_in->copy()->startOfDay()->addDays($i);
+                    $dateStr = $curDate->toDateString();
+                    if (!in_array($dateStr, $existingDates)) {
+                        $bd[] = [
+                            'date' => $dateStr,
+                            'price' => $rate,
+                            'day_of_week' => $curDate->format('l'),
+                            'room' => $booking->room_id,
+                        ];
+                    }
+                }
+
+                // Reconstruct periods cleanly if extension occurred
+                $cutoffDate = $nightlyEntries->first()['date'] ?? null;
+                if ($cutoffDate && $cutoffDate !== $booking->check_in->toDateString()) {
+                    $origNights = (int) $booking->check_in->copy()->startOfDay()->diffInDays(\Carbon\Carbon::parse($cutoffDate));
+                    $bd['periods'] = [
+                        [
+                            'start' => $booking->check_in->toDateString(),
+                            'end' => \Carbon\Carbon::parse($cutoffDate)->subDay()->toDateString(),
+                            'nights' => $origNights,
+                        ],
+                        [
+                            'start' => $cutoffDate,
+                            'end' => $booking->check_out->copy()->subDay()->toDateString(),
+                            'nights' => $totalNights - $origNights,
+                            'label' => 'Perpanjangan',
+                        ]
+                    ];
+                }
+
+                $periodsArr = $bd['periods'] ?? [];
+                $tierApplied = $bd['tier_applied'] ?? null;
+                $breakfastTotal = $bd['breakfast_total'] ?? 0;
+                $sortedNights = collect($bd)->filter(fn($d) => is_array($d) && isset($d['price']))->sortBy(fn($d) => $d['date'] ?? $d['night'] ?? '')->values()->all();
+                $bd = $sortedNights;
+                if (!empty($periodsArr)) $bd['periods'] = $periodsArr;
+                if ($tierApplied) $bd['tier_applied'] = $tierApplied;
+                if ($breakfastTotal) $bd['breakfast_total'] = $breakfastTotal;
+
+                $newBasePrice = collect($bd)->filter(fn($d) => is_array($d) && isset($d['price']))->sum('price');
+                $newTotalPrice = max(0, $newBasePrice - (float)$booking->discount_amount);
+                $booking->update([
+                    'base_price' => $newBasePrice,
+                    'total_price' => $newTotalPrice,
+                    'pricing_breakdown' => $bd,
+                ]);
+                \App\Models\Transaction::where('booking_id', $booking->id)
+                    ->where('reference_id', 'BOOK-' . $booking->id)
+                    ->update(['amount' => $newTotalPrice]);
+            }
+            // Case B: Nights count matches, reconcile base_price if discrepancy exists
+            elseif ($nightlyEntries->count() >= $totalNights) {
+                $breakdownNightlySum = $nightlyEntries->sum('price');
+                if ($breakdownNightlySum > 0 && abs($breakdownNightlySum - (float) $booking->base_price) > 1) {
+                    $baseDiff = $breakdownNightlySum - (float) $booking->base_price;
+                    $newBasePrice = $breakdownNightlySum;
+                    $newTotalPrice = max(0, (float) $booking->total_price + $baseDiff);
+                    $booking->update([
+                        'base_price' => $newBasePrice,
+                        'total_price' => $newTotalPrice,
+                    ]);
+                    \App\Models\Transaction::where('booking_id', $booking->id)
+                        ->where('reference_id', 'BOOK-' . $booking->id)
+                        ->update(['amount' => $newTotalPrice]);
+                }
+            }
+        }
+
+        // Auto-heal float nights in periods (e.g. 3.5 Nights -> 4 Nights)
+        if (is_array($booking->pricing_breakdown) && isset($booking->pricing_breakdown['periods'])) {
+            $bd = $booking->pricing_breakdown;
+            $hasFloatNights = false;
+            foreach ($bd['periods'] as &$per) {
+                if (isset($per['nights']) && (is_float($per['nights']) || (is_numeric($per['nights']) && floor((float)$per['nights']) != (float)$per['nights']))) {
+                    $per['nights'] = (int) round((float) $per['nights']);
+                    $hasFloatNights = true;
+                }
+            }
+            if ($hasFloatNights) {
+                $booking->update(['pricing_breakdown' => $bd]);
+            }
+        }
+
         $bankAccounts = \App\Models\BankAccount::where(
             "hotel_id",
             active_hotel_id(),
@@ -772,8 +881,7 @@ class BookingController extends Controller
             ->where("is_deposit", false)
             ->sum("amount");
         $posTotal = \App\Models\PosOrder::where('booking_id', $booking->id)
-            ->where("status", "completed")
-            ->where("payment_status", "unpaid")
+            ->where("status", "!=", "cancelled")
             ->sum('total_amount');
 
         $extraCharges = $booking->transactions
@@ -781,7 +889,8 @@ class BookingController extends Controller
             ->where("status", "success")
             ->where("reference_id", null)
             ->where("is_deposit", false);
-        $posOrders = $booking->posOrders;
+        $posOrders = $booking->posOrders()->where("status", "!=", "cancelled")->get();
+
 
         // Deposit items
         $depositCharges = $booking->transactions
@@ -801,7 +910,8 @@ class BookingController extends Controller
         $grandTotal =
             $booking->total_price +
             $manualExtraTotal +
-            $posTotal;
+            $posTotal +
+            $totalDeposit;
         $totalPayments = \App\Models\Transaction::where('booking_id', $booking->id)
             ->where("type", "payment")
             ->where("status", "success")
@@ -984,7 +1094,8 @@ class BookingController extends Controller
                         $breakfastPrice =
                             (float) ($newRoom->price_breakfast_public ?? 0);
                     }
-                    $breakfastTotal = $breakfastPrice * $nights;
+                    $pax = ($validated['adults'] ?? 1) + ($validated['children'] ?? 0);
+                    $breakfastTotal = $breakfastPrice * $pax * $nights;
                 }
 
                 // Store tier_applied in pricing_breakdown
@@ -996,7 +1107,6 @@ class BookingController extends Controller
 
                 $totalPrice =
                     $priceData["total_price"] +
-                    $depositAmount +
                     $breakfastTotal;
 
                 $booking->update([
@@ -1020,9 +1130,10 @@ class BookingController extends Controller
                     "payment_status" => $validated["payment_status"],
                     "notes" => $notes,
                     "voucher_code" => $validated["voucher_code"] ?? null,
-                    "source" => $validated["source"] ?? $booking->source,
+                    "source" => (!empty($validated["booking_source_id"]) && ($bs = \App\Models\BookingSource::find($validated["booking_source_id"]))) ? $bs->name : ($validated["source"] ?? $booking->source),
                     "booking_source_id" =>
                         $validated["booking_source_id"] ?? null,
+                    "guest_type" => (!empty($validated["booking_source_id"]) && ($bs = \App\Models\BookingSource::find($validated["booking_source_id"])) && str_contains(strtolower($bs->name), 'sales')) ? 'sales' : $booking->guest_type,
                     "include_breakfast" => $includeBreakfast,
                 ]);
 
@@ -1231,6 +1342,13 @@ class BookingController extends Controller
                 "error",
                 "Cannot add charges to a " . $booking->status . " booking.",
             );
+        }
+
+        if ($request->filled('amount') && is_string($request->amount)) {
+            $request->merge(['amount' => preg_replace('/[^0-9]/', '', $request->amount)]);
+        }
+        if ($request->filled('tax_amount') && is_string($request->tax_amount)) {
+            $request->merge(['tax_amount' => preg_replace('/[^0-9]/', '', $request->tax_amount)]);
         }
 
         $validated = $request->validate([
@@ -1540,6 +1658,10 @@ class BookingController extends Controller
             );
         }
 
+        if ($request->filled('amount') && is_string($request->amount)) {
+            $request->merge(['amount' => preg_replace('/[^0-9]/', '', $request->amount)]);
+        }
+
         $validated = $request->validate([
             "bank_account_id" => "required|exists:bank_accounts,id",
             "amount" => "required|numeric|min:0",
@@ -1640,6 +1762,10 @@ class BookingController extends Controller
                 "error",
                 "Unauthorized or invalid transaction.",
             );
+        }
+
+        if ($request->filled('amount') && is_string($request->amount)) {
+            $request->merge(['amount' => preg_replace('/[^0-9]/', '', $request->amount)]);
         }
 
         $validated = $request->validate([
@@ -1909,6 +2035,10 @@ class BookingController extends Controller
             return back()->with("error", $msg);
         }
 
+        if ($request->filled('discount_amount') && is_string($request->discount_amount)) {
+            $request->merge(['discount_amount' => preg_replace('/[^0-9]/', '', $request->discount_amount)]);
+        }
+
         $validated = $request->validate([
             "voucher_code" => "nullable|string|exists:vouchers,code",
             "discount_amount" => "nullable|numeric|min:0",
@@ -2068,6 +2198,10 @@ class BookingController extends Controller
             );
         }
 
+        if ($request->filled('deposit_amount') && is_string($request->deposit_amount)) {
+            $request->merge(['deposit_amount' => preg_replace('/[^0-9]/', '', $request->deposit_amount)]);
+        }
+
         $validated = $request->validate([
             "deposit_amount" => "required|numeric|min:0",
         ]);
@@ -2196,14 +2330,22 @@ class BookingController extends Controller
             $fakeP->payment_method = "cash";
             $fakeP->created_at = $booking->created_at;
             $displayPayments->push($fakeP);
+        }        // 4. Calculate display totals based on view filters
+        $depositCharges = $showRoom
+            ? $booking->transactions->where("type", "charge")->where("is_deposit", true)->sum("amount")
+            : 0;
+        if ($showRoom && $depositCharges <= 0 && ($booking->deposit_amount ?? 0) > 0) {
+            $depositCharges = (float) $booking->deposit_amount;
         }
 
-        // 4. Calculate display totals based on view filters
         $baseTotal = $showRoom ? $booking->total_price + $roomMarkupTotal : 0;
         $totalCharges =
             $baseTotal +
             $extraCharges->sum("amount") +
-            $posOrders->sum("total_amount");
+            $posOrders->sum("total_amount") +
+            $depositCharges;
+
+        $subtotalCharges = max(0, $totalCharges - $depositCharges);
 
         // 5. Cap display payments to match shown charges (prevent showing overpaid)
         $payments = collect();
@@ -2238,12 +2380,14 @@ class BookingController extends Controller
                 "posOrders",
                 "payments",
                 "totalCharges",
+                "subtotalCharges",
+                "depositCharges",
                 "totalPaid",
                 "balance",
                 "showRoom",
                 "showExtra",
                 "showPos",
-                "roomMarkupTotal",
+                "roomMarkupTotal"
             ),
         );
     }
@@ -2265,7 +2409,8 @@ class BookingController extends Controller
         $totalCharges =
             $booking->total_price +
             $extraCharges->sum("amount") +
-            $posOrders->sum("total_amount");
+            $posOrders->sum("total_amount") +
+            $booking->transactions->where("type", "charge")->where("is_deposit", true)->sum("amount");
         $totalPaid = $booking->transactions
             ->where("type", "payment")
             ->where("status", "success")
@@ -2344,39 +2489,102 @@ class BookingController extends Controller
         }
     }
 
-    public function calendar()
+    public function calendar(Request $request)
     {
-        $bookings = Booking::with(["guest", "room.roomType"])
-            ->whereIn("status", ["confirmed", "checked_in", "checked_out", "pending"])
-            ->get();
+        $hotelId = active_hotel_id();
+        $month = (int) $request->input('month', now()->month);
+        $year = (int) $request->input('year', now()->year);
 
-        $today = date("Y-m-d");
+        if ($month < 1 || $month > 12) {
+            $month = (int) now()->month;
+        }
+        if ($year < 2020 || $year > 2040) {
+            $year = (int) now()->year;
+        }
+
+        $startDate = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfMonth();
+        $endDate = $startDate->copy()->endOfMonth();
+        $daysInMonth = $startDate->daysInMonth;
+
+        $prevDate = $startDate->copy()->subMonth();
+        $nextDate = $startDate->copy()->addMonth();
+
+        $days = [];
+        $todayDate = now()->format('Y-m-d');
+        for ($d = 1; $d <= $daysInMonth; $d++) {
+            $currentDate = \Carbon\Carbon::createFromDate($year, $month, $d);
+            $days[] = [
+                'day' => $d,
+                'day_2digit' => str_pad($d, 2, '0', STR_PAD_LEFT),
+                'day_name' => $currentDate->format('D'),
+                'date_string' => $currentDate->format('Y-m-d'),
+                'is_weekend' => in_array($currentDate->dayOfWeek, [0, 6]), // 0 = Sunday, 6 = Saturday
+                'is_today' => ($currentDate->format('Y-m-d') === $todayDate),
+            ];
+        }
+
+        // Ambil data kamar hotel dengan tipe kamar dan status reservasi hari ini
+        $today = date('Y-m-d');
         $rooms = Room::with([
-            "roomType",
-            "bookings" => function ($q) use ($today) {
-                $q->whereIn("status", ["confirmed", "pending", "checked_in"])
-                    ->whereDate("check_in", "<=", $today)
-                    ->whereDate("check_out", ">", $today);
+            'roomType',
+            'bookings' => function ($q) use ($today) {
+                $q->whereIn('status', ['confirmed', 'pending', 'checked_in'])
+                    ->whereDate('check_in', '<=', $today)
+                    ->whereDate('check_out', '>', $today);
             },
         ])
-            ->orderBy("room_number")
+            ->orderBy('room_number')
             ->get();
 
         $rooms->each(function ($room) {
             $room->is_reserved_today = $room->bookings->isNotEmpty();
         });
 
-        $availableRooms = Room::whereIn("status", [
-            "Available",
-            "Checkout",
-            "Room Refresh",
+        $availableRooms = Room::whereIn('status', [
+            'Available',
+            'Checkout',
+            'Room Refresh',
         ])
-            ->with("roomType")
+            ->with('roomType')
             ->get();
-        return view(
-            "bookings.calendar",
-            compact("bookings", "rooms", "availableRooms"),
-        );
+
+        $roomTypes = \App\Models\RoomType::where('hotel_id', $hotelId)
+            ->orWhereIn('id', $rooms->pluck('room_type_id')->filter()->unique())
+            ->orderBy('name')
+            ->get();
+
+        // Ambil seluruh data booking aktif (Confirmed & In-House) untuk Kalender dan Timeline
+        $bookings = Booking::with(["guest", "room.roomType", "transactions"])
+            ->whereIn("status", ["confirmed", "checked_in"])
+            ->orderBy('check_in')
+            ->get();
+
+        // Filter khusus yang beririsan dengan bulan aktif untuk Timeline Matrix
+        $timelineBookings = $bookings->filter(function ($b) use ($startDate, $endDate) {
+            $checkIn = \Carbon\Carbon::parse($b->check_in);
+            $checkOut = \Carbon\Carbon::parse($b->check_out);
+            return $checkIn->lte($endDate) && $checkOut->gte($startDate);
+        });
+
+        $bookingsByRoom = $timelineBookings->groupBy('room_id');
+        $customBookings = $timelineBookings->where('is_custom', true)->values();
+
+        return view('bookings.calendar', compact(
+            'month',
+            'year',
+            'startDate',
+            'endDate',
+            'daysInMonth',
+            'days',
+            'prevDate',
+            'nextDate',
+            'rooms',
+            'availableRooms',
+            'roomTypes',
+            'bookings',
+            'bookingsByRoom',
+            'customBookings'
+        ));
     }
 
     /**
@@ -2448,6 +2656,45 @@ class BookingController extends Controller
 
         $room = $booking->room;
         $roomType = $room?->roomType;
+        $currentCheckOutDate = $booking->check_out->toDateString();
+
+        // Check if there is an upcoming or overlapping booking on this room
+        $nextBooking = Booking::where("room_id", $booking->room_id)
+            ->where("id", "!=", $booking->id)
+            ->whereNotIn("status", ["cancelled", "no_show", "checked_out"])
+            ->where(function ($q) use ($booking, $currentCheckOutDate) {
+                $q->whereDate("check_in", ">=", $currentCheckOutDate)
+                  ->orWhere(function ($sub) use ($booking) {
+                      $sub->whereDate("check_in", "<", $booking->check_out)
+                          ->whereDate("check_out", ">", $booking->check_out);
+                  });
+            })
+            ->orderBy("check_in", "asc")
+            ->first();
+
+        $maxNewCheckOut = null;
+        $isBlocked = false;
+
+        if ($nextBooking) {
+            if ($nextBooking->check_in->toDateString() <= $currentCheckOutDate) {
+                $isBlocked = true;
+            } else {
+                $maxNewCheckOut = $nextBooking->check_in->format("Y-m-d");
+            }
+        }
+
+        // Breakfast rate per night for preview display
+        $oldBreakdown = $booking->pricing_breakdown;
+        $tier = is_array($oldBreakdown) && isset($oldBreakdown['tier_applied']) ? $oldBreakdown['tier_applied'] : 'public';
+        $breakfastRatePerNight = match ($tier) {
+            'sales' => (float) ($room?->price_breakfast_sales ?? 0),
+            'high_season' => (float) ($room?->price_breakfast_high_season ?? 0),
+            default => (float) ($room?->price_breakfast_public ?? 0),
+        };
+        if ($breakfastRatePerNight <= 0 && is_array($oldBreakdown) && isset($oldBreakdown['breakfast_total'])) {
+            $totalNights = max(1, (int) $booking->check_in->diffInDays($booking->check_out));
+            $breakfastRatePerNight = (float) $oldBreakdown['breakfast_total'] / $totalNights;
+        }
 
         if ($booking->stay_type === "monthly") {
             $pricePerMonth = $roomType
@@ -2465,7 +2712,11 @@ class BookingController extends Controller
                     "room",
                     "roomType",
                     "minNewCheckOut",
+                    "maxNewCheckOut",
+                    "isBlocked",
+                    "nextBooking",
                     "pricePerMonth",
+                    "breakfastRatePerNight",
                 ),
             );
         } else {
@@ -2481,9 +2732,141 @@ class BookingController extends Controller
                     "room",
                     "roomType",
                     "minNewCheckOut",
+                    "maxNewCheckOut",
+                    "isBlocked",
+                    "nextBooking",
                     "pricePerNight",
+                    "breakfastRatePerNight",
                 ),
             );
+        }
+    }
+
+    /**
+     * Preview extension pricing (AJAX)
+     */
+    public function previewExtend(Request $request, Booking $booking)
+    {
+        $request->validate([
+            'new_check_out' => 'required|date|after:' . $booking->check_out->format('Y-m-d'),
+        ], [
+            'new_check_out.after' => 'Tanggal check-out baru harus setelah check-out saat ini.',
+        ]);
+
+        try {
+            $newCheckOut = \Carbon\Carbon::parse($request->new_check_out)->startOfDay();
+            $currentCheckOut = $booking->check_out->copy()->startOfDay();
+            $additionalDays = (int) $currentCheckOut->diffInDays($newCheckOut, false);
+
+            if ($additionalDays <= 0) {
+                return response()->json(['success' => false, 'message' => 'Durasi perpanjangan minimal 1 hari/malam.'], 422);
+            }
+
+            $room = $booking->room;
+            $roomType = $room?->roomType;
+
+            // Check conflict
+            $conflictBooking = Booking::where("room_id", $booking->room_id)
+                ->where("id", "!=", $booking->id)
+                ->whereNotIn("status", ["cancelled", "no_show", "checked_out"])
+                ->where(function ($q) use ($currentCheckOut, $newCheckOut) {
+                    $q->whereDate("check_in", "<", $newCheckOut)
+                      ->whereDate("check_out", ">", $currentCheckOut);
+                })
+                ->first();
+
+            if ($conflictBooking) {
+                $roomNumber = $room?->room_number ?? $booking->room_id;
+                $conflictGuest = $conflictBooking->guest?->name ?? 'Tamu';
+                $conflictDates = $conflictBooking->check_in->format('d/m/Y') . ' s/d ' . $conflictBooking->check_out->format('d/m/Y');
+                return response()->json([
+                    'success' => false,
+                    'conflict' => true,
+                    'message' => "Kamar {$roomNumber} tidak dapat diperpanjang karena sudah ada booking lain (#{$conflictBooking->id} - {$conflictGuest} pada {$conflictDates})."
+                ], 422);
+            }
+
+            $additionalRoomCost = 0;
+            $ratePerUnit = 0;
+
+            if ($booking->stay_type === "monthly") {
+                $monthlyRate = (float) ($room?->price_kos ?? $roomType?->price_kos ?? 0);
+                if ($monthlyRate <= 0 && $roomType) {
+                    $monthlyRate = (float) $this->pricingService->calculateMonthlyPrice($roomType, $booking->check_in, $booking->check_out, $room);
+                }
+                $dailyRate = round($monthlyRate / 30, 2);
+                $additionalRoomCost = round($dailyRate * $additionalDays);
+                $ratePerUnit = $dailyRate;
+            } else {
+                $originalNights = max(1, (int) $booking->check_in->copy()->startOfDay()->diffInDays($currentCheckOut));
+                $nightPrice = $originalNights > 0 ? ($booking->base_price / $originalNights) : (float) $booking->base_price;
+                $additionalRoomCost = round($nightPrice * $additionalDays);
+                $ratePerUnit = $nightPrice;
+            }
+
+            // Breakfast calculation based on toggle
+            $includeBreakfast = $request->has('include_breakfast')
+                ? $request->boolean('include_breakfast')
+                : (bool) $booking->include_breakfast;
+
+            $additionalBreakfastCost = 0;
+            $breakfastRatePerNight = 0;
+            if ($includeBreakfast) {
+                $oldBreakdown = $booking->pricing_breakdown;
+                $tier = is_array($oldBreakdown) && !empty($oldBreakdown['tier_applied']) ? $oldBreakdown['tier_applied'] : null;
+                if (!$tier) {
+                    if (strtolower($booking->guest_type ?? '') === 'sales' || strtolower($booking->source ?? '') === 'sales') {
+                        $tier = 'sales';
+                    } elseif ($booking->guest && $booking->guest->guestCategory && str_contains(strtolower($booking->guest->guestCategory->name), 'sales')) {
+                        $tier = 'sales';
+                    } else {
+                        $tier = 'public';
+                    }
+                }
+                $pax = max(1, (int) ($booking->adults ?? 1) + (int) ($booking->children ?? 0));
+                $breakfastUnitPrice = match ($tier) {
+                    'sales' => (float) ($room?->price_breakfast_sales ?? 0),
+                    'high_season' => (float) ($room?->price_breakfast_high_season ?? 0),
+                    default => (float) ($room?->price_breakfast_public ?? 0),
+                };
+                if ($breakfastUnitPrice > 0) {
+                    $breakfastRatePerNight = $breakfastUnitPrice * $pax;
+                } elseif (is_array($oldBreakdown) && isset($oldBreakdown['breakfast_total'])) {
+                    $origNights = max(1, (int) $booking->check_in->diffInDays($currentCheckOut));
+                    $breakfastRatePerNight = (float) $oldBreakdown['breakfast_total'] / $origNights;
+                }
+                $additionalBreakfastCost = round($breakfastRatePerNight * $additionalDays);
+            }
+
+            // Tax
+            $additionalTax = 0;
+            if (!$booking->tax_exempt && (float) $booking->tax_amount > 0) {
+                $taxRate = (float) $booking->base_price > 0 ? ((float) $booking->tax_amount / (float) $booking->base_price) : 0.1;
+                $additionalTax = round(($additionalRoomCost + $additionalBreakfastCost) * $taxRate, 2);
+            }
+
+            $totalAdditional = $additionalRoomCost + $additionalBreakfastCost + $additionalTax;
+            $currentTotal = (float) $booking->total_price;
+            $newGrandTotal = $currentTotal + $totalAdditional;
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'stay_type' => $booking->stay_type,
+                    'additional_days' => $additionalDays,
+                    'rate_per_unit' => $ratePerUnit,
+                    'room_additional_cost' => $additionalRoomCost,
+                    'include_breakfast' => $includeBreakfast,
+                    'breakfast_rate' => $breakfastRatePerNight,
+                    'breakfast_additional_cost' => $additionalBreakfastCost,
+                    'tax_additional' => $additionalTax,
+                    'total_additional' => $totalAdditional,
+                    'current_total' => $currentTotal,
+                    'new_grand_total' => $newGrandTotal,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
     }
 
@@ -2513,9 +2896,15 @@ class BookingController extends Controller
         );
 
         try {
-            $newCheckOut = \Carbon\Carbon::parse($request->new_check_out);
-            $currentCheckOut = $booking->check_out;
-            $additionalDays = $currentCheckOut->diffInDays($newCheckOut);
+            $newCheckOut = \Carbon\Carbon::parse($request->new_check_out)->startOfDay();
+            $currentCheckOut = $booking->check_out->copy()->startOfDay();
+            $additionalDays = (int) $currentCheckOut->diffInDays($newCheckOut, false);
+
+            if ($additionalDays <= 0) {
+                $msg = "Durasi perpanjangan minimal 1 hari/malam.";
+                if ($this->isAjaxRequest()) return $this->ajaxError($msg);
+                return back()->with("error", $msg);
+            }
 
             $room = $booking->room;
             $roomType = $room?->roomType;
@@ -2526,43 +2915,76 @@ class BookingController extends Controller
                 return back()->with("error", $msg);
             }
 
+            // Check if there is an overlapping booking on the same room
+            $conflictBooking = Booking::where("room_id", $booking->room_id)
+                ->where("id", "!=", $booking->id)
+                ->whereNotIn("status", ["cancelled", "no_show", "checked_out"])
+                ->where(function ($q) use ($currentCheckOut, $newCheckOut) {
+                    $q->whereDate("check_in", "<", $newCheckOut)
+                      ->whereDate("check_out", ">", $currentCheckOut);
+                })
+                ->first();
+
+            if ($conflictBooking) {
+                $roomNumber = $room?->room_number ?? $booking->room_id;
+                $conflictGuest = $conflictBooking->guest?->name ?? 'Tamu';
+                $conflictDates = $conflictBooking->check_in->format('d/m/Y') . ' s/d ' . $conflictBooking->check_out->format('d/m/Y');
+                $msg = "Kamar {$roomNumber} tidak dapat diperpanjang karena sudah ada booking lain (#{$conflictBooking->id} - {$conflictGuest} pada {$conflictDates}). Silakan gunakan fitur Pindah Kamar (Room Transfer).";
+                if ($this->isAjaxRequest()) {
+                    return response()->json([
+                        'success' => false,
+                        'conflict' => true,
+                        'message' => $msg,
+                        'errors' => ['new_check_out' => [$msg]]
+                    ], 422);
+                }
+                return back()->with("error", $msg)->withInput();
+            }
+
             $additionalCost = 0;
             $newBreakdown = is_array($booking->pricing_breakdown)
                 ? $booking->pricing_breakdown
                 : [];
 
             if ($booking->stay_type === "monthly") {
-                $totalNights = $booking->check_in->diffInDays($newCheckOut);
-                $originalNights = $booking->check_in->diffInDays($currentCheckOut);
-                $totalMonths = max(1, (int) round($totalNights / 30));
-                $originalMonths = max(1, (int) round($originalNights / 30));
-                $additionalMonths = max(1, $totalMonths - $originalMonths);
+                $monthlyRate = (float) ($room?->price_kos ?? $roomType?->price_kos ?? 0);
+                if ($monthlyRate <= 0 && $roomType) {
+                    $monthlyRate = (float) $this->pricingService->calculateMonthlyPrice($roomType, $booking->check_in, $booking->check_out, $room);
+                }
+                $dailyRate = round($monthlyRate / 30, 2);
+                $additionalCost = round($dailyRate * $additionalDays);
+                $extensionInfo = "{$additionalDays} hari (" . ($additionalDays >= 30 ? round($additionalDays / 30, 1) . ' bulan' : 'prorata') . ")";
 
-                $pricePerMonth = $this->pricingService->calculateMonthlyPrice(
-                    $roomType,
-                    $currentCheckOut,
-                    $newCheckOut,
-                    $room,
-                );
-                $additionalCost = $pricePerMonth * $additionalMonths;
-                $extensionInfo = "{$additionalMonths} bulan";
-
-                $dailyRate = $additionalDays > 0 ? $pricePerMonth / 30 : 0;
                 for ($i = 0; $i < $additionalDays; $i++) {
                     $date = $currentCheckOut->copy()->addDays($i);
                     $newBreakdown[] = [
                         "date" => $date->toDateString(),
                         "day_of_week" => $date->format("l"),
-                        "price" => round($dailyRate, 2),
+                        "price" => $dailyRate,
                     ];
                 }
             } else {
                 $extensionInfo = "{$additionalDays} malam";
-                // Use original booking's average nightly rate
-                $originalNights = $booking->check_in->diffInDays($currentCheckOut);
+                $originalNights = max(1, (int) $booking->check_in->copy()->startOfDay()->diffInDays($currentCheckOut));
                 $nightPrice = $originalNights > 0
                     ? $booking->base_price / $originalNights
                     : $booking->base_price;
+
+                // Ensure original stay nights exist in breakdown before adding extension
+                $existingDates = collect($newBreakdown)->filter(fn($v) => is_array($v) && isset($v['date']))->pluck('date')->toArray();
+                for ($i = 0; $i < $originalNights; $i++) {
+                    $origDate = $booking->check_in->copy()->startOfDay()->addDays($i);
+                    $origDateStr = $origDate->toDateString();
+                    if (!in_array($origDateStr, $existingDates)) {
+                        $newBreakdown[] = [
+                            "date" => $origDateStr,
+                            "day_of_week" => $origDate->format("l"),
+                            "price" => $nightPrice,
+                            "room" => $booking->room_id,
+                        ];
+                    }
+                }
+
                 for ($i = 0; $i < $additionalDays; $i++) {
                     $date = $currentCheckOut->copy()->addDays($i);
                     $additionalCost += $nightPrice;
@@ -2571,25 +2993,59 @@ class BookingController extends Controller
                         "date" => $date->toDateString(),
                         "day_of_week" => $date->format("l"),
                         "price" => $nightPrice,
+                        "room" => $booking->room_id,
                     ];
                 }
             }
 
-            $periods = $newBreakdown["periods"] ?? [];
-            if (empty($periods)) {
-                $origFiltered = collect($newBreakdown)->filter(
-                    fn($v, $k) => is_array($v) && isset($v["date"]),
-                );
-                $origFirst = $origFiltered->first();
-                $origLast = $origFiltered->last();
-                if ($origFirst && $origLast) {
-                    $periods[] = [
-                        "start" => $origFirst["date"],
-                        "end" => $origLast["date"],
-                        "nights" => $origFiltered->count(),
-                    ];
+            // Breakfast calculation for extended nights based on toggle
+            $includeBreakfast = $request->has('include_breakfast')
+                ? $request->boolean('include_breakfast')
+                : (bool) $booking->include_breakfast;
+
+            $additionalBreakfastCost = 0;
+            if ($includeBreakfast) {
+                $tier = !empty($newBreakdown['tier_applied']) ? $newBreakdown['tier_applied'] : null;
+                if (!$tier) {
+                    if (strtolower($booking->guest_type ?? '') === 'sales' || strtolower($booking->source ?? '') === 'sales') {
+                        $tier = 'sales';
+                    } elseif ($booking->guest && $booking->guest->guestCategory && str_contains(strtolower($booking->guest->guestCategory->name), 'sales')) {
+                        $tier = 'sales';
+                    } else {
+                        $tier = 'public';
+                    }
                 }
+                $pax = max(1, (int) ($booking->adults ?? 1) + (int) ($booking->children ?? 0));
+                $breakfastUnitPrice = match ($tier) {
+                    'sales' => (float) ($room->price_breakfast_sales ?? 0),
+                    'high_season' => (float) ($room->price_breakfast_high_season ?? 0),
+                    default => (float) ($room->price_breakfast_public ?? 0),
+                };
+                if ($breakfastUnitPrice > 0) {
+                    $breakfastPricePerNight = $breakfastUnitPrice * $pax;
+                } elseif (isset($newBreakdown['breakfast_total'])) {
+                    $origNights = max(1, (int) $booking->check_in->copy()->startOfDay()->diffInDays($currentCheckOut));
+                    $breakfastPricePerNight = (float) $newBreakdown['breakfast_total'] / $origNights;
+                } else {
+                    $breakfastPricePerNight = 0;
+                }
+                $additionalBreakfastCost = round($breakfastPricePerNight * $additionalDays);
+                $newBreakdown['breakfast_total'] = ((float) ($newBreakdown['breakfast_total'] ?? 0)) + $additionalBreakfastCost;
             }
+
+            // Tax calculation for extension
+            $additionalTax = 0;
+            if (!$booking->tax_exempt && (float) $booking->tax_amount > 0) {
+                $taxRate = (float) $booking->base_price > 0 ? ((float) $booking->tax_amount / (float) $booking->base_price) : 0.1;
+                $additionalTax = round(($additionalCost + $additionalBreakfastCost) * $taxRate, 2);
+            }
+
+            $periods = [];
+            $periods[] = [
+                "start" => $booking->check_in->toDateString(),
+                "end" => $currentCheckOut->copy()->subDay()->toDateString(),
+                "nights" => $originalNights,
+            ];
             $periods[] = [
                 "start" => $currentCheckOut->toDateString(),
                 "end" => $newCheckOut->copy()->subDay()->toDateString(),
@@ -2598,26 +3054,33 @@ class BookingController extends Controller
             ];
             $newBreakdown["periods"] = $periods;
 
+            $totalAdditional = $additionalCost + $additionalBreakfastCost + $additionalTax;
             $newBasePrice = $booking->base_price + $additionalCost;
-            $newTotalPrice = $booking->total_price + $additionalCost;
+            $newTotalPrice = $booking->total_price + $totalAdditional;
 
-            $booking->update([
+            $updateData = [
                 "check_out" => $newCheckOut,
                 "base_price" => $newBasePrice,
                 "total_price" => $newTotalPrice,
                 "pricing_breakdown" => $newBreakdown,
+                "include_breakfast" => $includeBreakfast || (bool) $booking->include_breakfast,
                 "payment_status" =>
                     $booking->payment_status === "paid"
                         ? "partial"
                         : $booking->payment_status,
-            ]);
+            ];
+            if ($additionalTax > 0) {
+                $updateData["tax_amount"] = (float) $booking->tax_amount + $additionalTax;
+            }
+
+            $booking->update($updateData);
 
             Transaction::where("booking_id", $booking->id)
                 ->where("reference_id", "BOOK-" . $booking->id)
                 ->update(["amount" => $newTotalPrice]);
 
-        $msg = "Booking diperpanjang {$extensionInfo} sampai {$newCheckOut->format("d M Y")}. Biaya tambahan: Rp " . number_format($additionalCost, 0, ",", ".");
-        return $this->ajaxOrRedirect($msg, route("bookings.show", $booking->id));
+            $msg = "Booking diperpanjang {$extensionInfo} sampai {$newCheckOut->format("d M Y")}. Biaya tambahan: Rp " . number_format($totalAdditional, 0, ",", ".");
+            return $this->ajaxOrRedirect($msg, route("bookings.show", $booking->id));
         } catch (\Exception $e) {
             if ($this->isAjaxRequest()) return $this->ajaxError($e->getMessage());
             return back()->with("error", $e->getMessage());

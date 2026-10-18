@@ -27,11 +27,6 @@
         .totals table { width: 300px; }
         .totals tr:last-child td { border-top: 2px solid #2c3e50; font-weight: bold; font-size: 15px; }
         .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; text-align: center; color: #999; font-size: 11px; }
-        .badge-status { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-        .badge-draft { background: #e9ecef; color: #495057; }
-        .badge-sent { background: #cce5ff; color: #004085; }
-        .badge-paid { background: #d4edda; color: #155724; }
-        .badge-cancelled { background: #f8d7da; color: #721c24; }
         .notes-box { background: #f8f9fa; padding: 12px 15px; border-radius: 6px; margin-top: 15px; }
         .notes-box h5 { font-size: 11px; color: #999; text-transform: uppercase; margin-bottom: 5px; }
         @media print {
@@ -53,7 +48,6 @@
                 <h2>INVOICE</h2>
                 <p><strong>{{ $customInvoice->invoice_number }}</strong></p>
                 <p>Date: {{ $customInvoice->created_at->format('d M Y') }}</p>
-                <p><span class="badge-status badge-{{ $customInvoice->status }}">{{ ucfirst($customInvoice->status) }}</span></p>
             </div>
         </div>
 
@@ -90,8 +84,8 @@
                 <tr>
                     <td>{{ $customInvoice->room_name }}</td>
                     <td class="text-right">{{ $customInvoice->nights }}</td>
-                    <td class="text-right">Rp {{ number_format($customInvoice->sell_price / max(1, $customInvoice->nights), 0, ',', '.') }}</td>
                     <td class="text-right">Rp {{ number_format($customInvoice->sell_price, 0, ',', '.') }}</td>
+                    <td class="text-right">Rp {{ number_format($customInvoice->total_amount, 0, ',', '.') }}</td>
                 </tr>
             </tbody>
         </table>
@@ -100,7 +94,7 @@
             <table>
                 <tr>
                     <td>Subtotal</td>
-                    <td class="text-right">Rp {{ number_format($customInvoice->sell_price, 0, ',', '.') }}</td>
+                    <td class="text-right">Rp {{ number_format($customInvoice->total_amount, 0, ',', '.') }}</td>
                 </tr>
                 @if($customInvoice->agent_commission > 0)
                 <tr>
@@ -110,7 +104,7 @@
                 @endif
                 <tr>
                     <td>Total</td>
-                    <td class="text-right">Rp {{ number_format($customInvoice->sell_price, 0, ',', '.') }}</td>
+                    <td class="text-right">Rp {{ number_format($customInvoice->total_amount, 0, ',', '.') }}</td>
                 </tr>
             </table>
         </div>

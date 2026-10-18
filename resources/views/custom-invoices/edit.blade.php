@@ -48,7 +48,27 @@
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="room_name" class="form-label">Nama Kamar / Layanan <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" id="room_name" name="room_name" value="{{ old('room_name', $customInvoice->room_name) }}" required>
+                                <select class="form-control" id="room_name" name="room_name" required>
+                                    <option value="">-- Pilih Kamar / Layanan --</option>
+                                    @php
+                                        $currentVal = old('room_name', $customInvoice->room_name);
+                                        $matched = false;
+                                    @endphp
+                                    @foreach($rooms ?? [] as $room)
+                                        @php
+                                            $roomLabel = 'Kamar ' . $room->room_number . ($room->roomType ? ' - ' . $room->roomType->name : '');
+                                            $isSelected = ($currentVal === $roomLabel || $currentVal === $room->room_number);
+                                            if ($isSelected) $matched = true;
+                                        @endphp
+                                        <option value="{{ $roomLabel }}" data-price="{{ (int)$room->price_public }}" {{ $isSelected ? 'selected' : '' }}>
+                                            {{ $roomLabel }}
+                                        </option>
+                                    @endforeach
+                                    @if(!$matched && !empty($currentVal))
+                                        <option value="{{ $currentVal }}" selected>{{ $currentVal }}</option>
+                                    @endif
+                                </select>
+                                <small class="text-muted">Pilih dari list kamar general data (bisa ketik nama baru jika layanan custom).</small>
                             </div>
                         </div>
 
@@ -80,10 +100,16 @@
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="sell_price" class="form-label text-primary">Harga Jual (Sell Price) <span class="text-danger">*</span></label>
+                                <label for="sell_price" class="form-label text-primary fw-semibold">Harga Jual (Tarif Per Malam) <span class="text-danger">*</span></label>
                                 <div class="input-group">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="number" class="form-control" id="sell_price" name="sell_price" value="{{ old('sell_price', $customInvoice->sell_price) }}" required>
+                                    <input type="number" class="form-control" id="sell_price" name="sell_price" value="{{ old('sell_price', $customInvoice->sell_price) }}" placeholder="Tarif per malam" required>
+                                </div>
+                                <div class="p-2 mt-2 bg-light-subtle rounded border d-flex justify-content-between align-items-center">
+                                    <span class="fs-12 text-muted">
+                                        Total: <strong id="preview_nights">{{ $customInvoice->nights }}</strong> malam &times; <strong id="preview_rate">Rp 0</strong>
+                                    </span>
+                                    <span class="fs-13 fw-bold text-primary" id="preview_total">Rp 0</span>
                                 </div>
                             </div>
                             <div class="col-md-6 mb-3">
@@ -128,6 +154,35 @@
                 minimumInputLength: 2
             });
 
+            $('#room_name').select2({
+                placeholder: '-- Pilih Kamar / Layanan --',
+                tags: true,
+                allowClear: true
+            });
+
+            $('#room_name').on('change', function() {
+                var selectedOption = $(this).find('option:selected');
+                var price = selectedOption.data('price');
+                if (price && (!$('#sell_price').val() || $('#sell_price').val() == '0')) {
+                    $('#sell_price').val(price);
+                }
+                updateInvoiceCalculation();
+            });
+
+            function formatRupiah(num) {
+                return 'Rp ' + Number(num || 0).toLocaleString('id-ID');
+            }
+
+            function updateInvoiceCalculation() {
+                var nights = parseInt($('#nights_display').val()) || 1;
+                var rate = parseFloat($('#sell_price').val()) || 0;
+                var total = nights * rate;
+
+                $('#preview_nights').text(nights);
+                $('#preview_rate').text(formatRupiah(rate));
+                $('#preview_total').text(formatRupiah(total));
+            }
+
             function calcNights() {
                 var ci = new Date($('#check_in').val());
                 var co = new Date($('#check_out').val());
@@ -135,8 +190,10 @@
                     var diff = Math.ceil((co - ci) / (1000 * 60 * 60 * 24));
                     $('#nights_display').val(diff);
                 }
+                updateInvoiceCalculation();
             }
 
+            $('#sell_price').on('input change', updateInvoiceCalculation);
             $('#check_in, #check_out').on('change', calcNights);
             calcNights();
         });

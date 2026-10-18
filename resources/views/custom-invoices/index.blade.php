@@ -35,19 +35,10 @@
                 </div>
                 <div class="card-body">
                     <form method="GET" class="row g-3 mb-4">
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <input type="text" class="form-control" name="search" placeholder="Search guest/invoice..." value="{{ request('search') }}">
                         </div>
-                        <div class="col-md-2">
-                            <select class="form-select" name="status">
-                                <option value="">All Status</option>
-                                <option value="draft" {{ request('status') == 'draft' ? 'selected' : '' }}>Draft</option>
-                                <option value="sent" {{ request('status') == 'sent' ? 'selected' : '' }}>Sent</option>
-                                <option value="paid" {{ request('status') == 'paid' ? 'selected' : '' }}>Paid</option>
-                                <option value="cancelled" {{ request('status') == 'cancelled' ? 'selected' : '' }}>Cancelled</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <select class="form-select" name="source">
                                 <option value="">All Sources</option>
                                 @foreach($sources as $source)
@@ -75,8 +66,7 @@
                                     <th>Source</th>
                                     <th>Room</th>
                                     <th>Check-in/out</th>
-                                    <th class="text-end">Sell Price</th>
-                                    <th class="text-center">Status</th>
+                                    <th class="text-end">Total Amount</th>
                                     <th class="text-center">Actions</th>
                                 </tr>
                             </thead>
@@ -93,13 +83,17 @@
                                             <br>{{ $invoice->nights }} night(s)
                                         </small>
                                     </td>
-                                    <td class="text-end">Rp {{ number_format($invoice->sell_price, 0, ',', '.') }}</td>
-                                    <td class="text-center">{!! $invoice->status_badge !!}</td>
+                                    <td class="text-end">
+                                        <span class="fw-semibold">Rp {{ number_format($invoice->total_amount, 0, ',', '.') }}</span>
+                                        @if($invoice->nights > 1)
+                                            <br><small class="text-muted fs-11">(@ Rp {{ number_format($invoice->sell_price, 0, ',', '.') }}/mlm)</small>
+                                        @endif
+                                    </td>
                                     <td class="text-center">
                                         <div class="btn-group btn-group-sm">
                                             <a href="{{ route('custom-invoices.show', $invoice->id) }}" class="btn btn-soft-primary" title="View"><i class="ri-eye-line"></i></a>
                                             @can('custom-invoices.edit')
-                                            <a href="{{ route('custom-invoices.edit', $invoice->id) }}" class="btn btn-soft-warning" title="Edit"><i class="ri-edit-line"></i></a>
+                                             <a href="{{ route('custom-invoices.edit', $invoice->id) }}" class="btn btn-soft-warning" title="Edit"><i class="ri-edit-line"></i></a>
                                             @endcan
                                             @can('custom-invoices.print')
                                             <a href="{{ route('custom-invoices.print', $invoice->id) }}" class="btn btn-soft-success" title="Print" target="_blank"><i class="ri-printer-line"></i></a>
@@ -109,7 +103,7 @@
                                 </tr>
                                 @empty
                                 <tr>
-                                    <td colspan="8" class="text-center text-muted py-4">No custom invoices found.</td>
+                                    <td colspan="7" class="text-center text-muted py-4">No custom invoices found.</td>
                                 </tr>
                                 @endforelse
                             </tbody>

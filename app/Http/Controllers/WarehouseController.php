@@ -10,8 +10,64 @@ class WarehouseController extends Controller
 {
     public function index()
     {
-        $warehouses = Warehouse::where('hotel_id', active_hotel_id())->get();
+        $hotelId = active_hotel_id();
+
+        // Auto-sync: ensure any inventory in this hotel that lacks warehouse stock records
+        // is initialized in the display warehouse (or first warehouse)
+        $displayWarehouse = Warehouse::where('hotel_id', $hotelId)->where('type', 'display')->first()
+            ?? Warehouse::where('hotel_id', $hotelId)->first();
+
+        if ($displayWarehouse) {
+            $existingInventoryIdsWithStock = \App\Models\InventoryWarehouseStock::whereHas('warehouse', function ($q) use ($hotelId) {
+                $q->where('hotel_id', $hotelId);
+            })->pluck('inventory_id')->unique();
+
+            $missingInventories = \App\Models\Inventory::where('hotel_id', $hotelId)
+                ->whereNotIn('id', $existingInventoryIdsWithStock)
+                ->get();
+
+            foreach ($missingInventories as $missingInv) {
+                \App\Models\InventoryWarehouseStock::firstOrCreate([
+                    'inventory_id' => $missingInv->id,
+                    'warehouse_id' => $displayWarehouse->id,
+                ], [
+                    'stock' => max(0, (int)$missingInv->stock),
+                ]);
+            }
+        }
+
+        $warehouses = Warehouse::where('hotel_id', $hotelId)
+            ->with([
+                'stocks' => function ($q) {
+                    $q->with('inventory')->whereHas('inventory');
+                }
+            ])
+            ->get();
+
         return view('pos.warehouse.index', compact('warehouses'));
+    }
+
+    public function show(Warehouse $warehouse)
+    {
+        if ($warehouse->hotel_id !== active_hotel_id()) {
+            abort(403);
+        }
+
+        $warehouse->load([
+            'stocks' => function ($q) {
+                $q->with('inventory')->whereHas('inventory');
+            }
+        ]);
+
+        if (request()->wantsJson() || request()->ajax()) {
+            return response()->json([
+                'success' => true,
+                'warehouse' => $warehouse,
+                'stocks' => $warehouse->stocks,
+            ]);
+        }
+
+        return redirect()->route('warehouse.index');
     }
 
     public function store(Request $request)

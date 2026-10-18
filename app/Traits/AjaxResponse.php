@@ -64,9 +64,11 @@ trait AjaxResponse
     protected function ajaxOrRedirect(string $message, string $redirectUrl, $data = null, int $successCode = 200)
     {
         if ($this->isAjaxRequest()) {
-            return $this->ajaxSuccess($message, $data, $successCode);
+            $payload = array_merge(['redirect_url' => $redirectUrl], is_array($data) ? $data : ($data ? ['data' => $data] : []));
+            return $this->ajaxSuccess($message, $payload, $successCode);
         }
 
         return redirect($redirectUrl)->with('success', $message);
     }
+
 }

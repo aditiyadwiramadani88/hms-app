@@ -12,6 +12,48 @@
         @endslot
     @endcomponent
 
+    {{-- Filter Bar Start Date & End Date --}}
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body py-3">
+            <form action="{{ route('bank-accounts.index') }}" method="GET" class="row g-2 align-items-end">
+                <div class="col-md-3 col-sm-6">
+                    <label class="form-label fw-semibold fs-12 mb-1">
+                        <i class="ri-calendar-line me-1 text-primary"></i>Start Date
+                    </label>
+                    <input type="date" name="start_date" class="form-control form-control-sm" value="{{ $startDate }}">
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <label class="form-label fw-semibold fs-12 mb-1">
+                        <i class="ri-calendar-event-line me-1 text-primary"></i>End Date
+                    </label>
+                    <input type="date" name="end_date" class="form-control form-control-sm" value="{{ $endDate }}">
+                </div>
+                <div class="col-md-2 col-sm-6">
+                    <label class="form-label fw-semibold fs-12 mb-1">
+                        <i class="ri-calendar-check-line me-1 text-secondary"></i>Atau Pilih Bulan
+                    </label>
+                    <input type="month" name="month" class="form-control form-control-sm" value="{{ request('month', $month->format('Y-m')) }}" onchange="this.form.start_date.value=''; this.form.end_date.value=''; this.form.submit();">
+                </div>
+                <div class="col-md-4 col-sm-12 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+                        <i class="ri-filter-3-line me-1"></i> Filter Periode
+                    </button>
+                    <a href="{{ route('bank-accounts.index') }}" class="btn btn-soft-secondary btn-sm" title="Reset ke Bulan Berjalan">
+                        <i class="ri-refresh-line me-1"></i> Reset
+                    </a>
+                </div>
+            </form>
+            <div class="mt-2 text-muted fs-12 d-flex align-items-center justify-content-between flex-wrap gap-1">
+                <span>
+                    <i class="ri-information-line text-info me-1"></i> Menampilkan data & rincian periode: <strong>{{ $periodLabel }}</strong>
+                </span>
+                <span class="badge bg-light text-secondary border">
+                    Kas Diterima: <strong>Rp {{ number_format($monthlyRevenue, 0, ',', '.') }}</strong> | Hak Owner: <strong>Rp {{ number_format($realizedRevenue, 0, ',', '.') }}</strong>
+                </span>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
         <div class="col-xl-3 col-md-6">
             <div class="card card-animate bg-primary">
@@ -23,8 +65,11 @@
                     </div>
                     <div class="d-flex align-items-end justify-content-between mt-4">
                         <div>
-                            <h4 class="fs-22 fw-semibold ff-secondary mb-4 text-white">Rp {{ number_format($totalBalance, 0, ',', '.') }}</h4>
+                            <h4 class="fs-22 fw-semibold ff-secondary mb-1 text-white">Rp {{ number_format($totalBalance, 0, ',', '.') }}</h4>
                             <span class="badge bg-white text-primary">All Accounts</span>
+                            <div class="mt-2 text-white-50 fs-11">
+                                Pemasukan Periode: <strong class="text-white">Rp {{ number_format($monthlyRevenue, 0, ',', '.') }}</strong>
+                            </div>
                         </div>
                         <div class="avatar-sm flex-shrink-0">
                             <span class="avatar-title bg-white-50 rounded fs-3">
@@ -45,8 +90,11 @@
                     </div>
                     <div class="d-flex align-items-end justify-content-between mt-4">
                         <div>
-                            <h4 class="fs-22 fw-semibold ff-secondary mb-4 text-white">Rp {{ number_format($accounts->sum('available_balance'), 0, ',', '.') }}</h4>
+                            <h4 class="fs-22 fw-semibold ff-secondary mb-1 text-white">Rp {{ number_format($accounts->sum('available_balance'), 0, ',', '.') }}</h4>
                             <span class="badge bg-white text-success">Realized Revenue</span>
+                            <div class="mt-2 text-white-50 fs-11">
+                                Hak Owner Periode: <strong class="text-white">Rp {{ number_format($realizedRevenue, 0, ',', '.') }}</strong>
+                            </div>
                         </div>
                         <div class="avatar-sm flex-shrink-0">
                             <span class="avatar-title bg-white-50 rounded fs-3">
@@ -125,6 +173,14 @@
                                     <div class="mb-3">
                                         <h3 class="mb-1">Rp {{ number_format($account->balance, 0, ',', '.') }}</h3>
                                         <p class="text-muted fs-12 mb-0">Available: <span class="text-success fw-medium">Rp {{ number_format($account->available_balance, 0, ',', '.') }}</span></p>
+                                        @php
+                                            $acctPayment = $paymentsByAccount->firstWhere('account_name', $account->name);
+                                        @endphp
+                                        @if($acctPayment && $acctPayment->total_amount > 0)
+                                        <p class="text-primary fs-12 mb-0 mt-1">
+                                            <i class="ri-arrow-down-circle-line me-1"></i>Pemasukan Periode: <span class="fw-semibold">Rp {{ number_format($acctPayment->total_amount, 0, ',', '.') }}</span>
+                                        </p>
+                                        @endif
                                         @if($account->isCashAccount())
                                         <p class="mb-0 mt-1">
                                             <span class="badge bg-warning-subtle text-warning"><i class="ri-safe-2-line me-1"></i>Final Cash: Rp {{ number_format($account->available_balance, 0, ',', '.') }}</span>
@@ -156,10 +212,11 @@
 
     <div class="row">
         <div class="col-lg-12">
-            <form action="{{ route('bank-accounts.index') }}" method="GET" class="d-flex align-items-center gap-2 mb-3">
-                <label class="form-label mb-0">Rincian Bulan</label>
-                <input type="month" name="month" class="form-control form-control-sm" style="width: 150px;" value="{{ $month->format('Y-m') }}" onchange="this.form.submit()">
-            </form>
+            <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                <h5 class="fs-15 mb-0 fw-semibold">
+                    <i class="ri-file-list-3-line me-1 text-primary"></i> Rincian Pendapatan Periode: <span class="text-primary">{{ $periodLabel }}</span>
+                </h5>
+            </div>
         </div>
     </div>
 
@@ -167,7 +224,7 @@
         <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">
-                    <h5 class="card-title mb-0">Rincian Total Gross (Kas) - {{ $month->translatedFormat('F Y') }}</h5>
+                    <h5 class="card-title mb-0">Rincian Total Gross (Kas) — {{ $periodLabel }}</h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
@@ -207,7 +264,7 @@
         <div class="col-xl-6">
             <div class="card">
                 <div class="card-header">
-                    <h5 class="card-title mb-0">Rincian Realized (Hak Owner) - {{ $month->translatedFormat('F Y') }}</h5>
+                    <h5 class="card-title mb-0">Rincian Realized (Hak Owner) — {{ $periodLabel }}</h5>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">

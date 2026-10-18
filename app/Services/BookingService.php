@@ -81,7 +81,7 @@ class BookingService
             $breakfastTotal = 0;
             $appliedTier = 'public'; // Default tier
             if ($includeBreakfast) {
-                $pax = 1; // Fixed 1 pack per room per night
+                $pax = ($data['adults'] ?? 1) + ($data['children'] ?? 0);
                 $nights = max(1, $checkIn->diffInDays($checkOut));
                 
                 // Determine which breakfast tier to use:
@@ -103,7 +103,7 @@ class BookingService
                     $breakfastPrice = (float) ($room->price_breakfast_public ?? 0);
                 }
                 
-                $breakfastTotal = $breakfastPrice * $nights;
+                $breakfastTotal = $breakfastPrice * $pax * $nights;
             }
             
             // Store tier_applied in pricing_breakdown for future reference
@@ -112,6 +112,30 @@ class BookingService
 
             // Determine acting user (for public bookings, pass via data)
             $userId = $data['user_id'] ?? Auth::id();
+
+            // Resolve booking source & guest_type
+            $bookingSource = !empty($data['booking_source_id'])
+                ? \App\Models\BookingSource::find($data['booking_source_id'])
+                : null;
+            $sourceName = strtolower(trim($bookingSource?->name ?? $data['source'] ?? ''));
+
+            $guestType = 'umum';
+            if (($data['stay_type'] ?? 'daily') === 'monthly' || ($data['stay_type'] ?? 'daily') === 'yearly' || in_array($sourceName, ['kos', 'kost'])) {
+                $guestType = 'kos';
+            } elseif (
+                str_contains($sourceName, 'sales') ||
+                ($data['tier_applied'] ?? '') === 'sales' ||
+                ($appliedTier === 'sales') ||
+                ($guest->guestCategory && str_contains(strtolower($guest->guestCategory->name), 'sales')) ||
+                !empty($guest->company_name)
+            ) {
+                $guestType = 'sales';
+            } elseif (
+                in_array($sourceName, ['traveloka', 'tiket.com', 'agoda', 'booking.com', 'airbnb', 'ota']) ||
+                str_contains($sourceName, 'online')
+            ) {
+                $guestType = 'online';
+            }
 
             // Create booking
             $booking = Booking::create([
@@ -128,7 +152,7 @@ class BookingService
                 'base_price' => $priceData['base_price'],
                 'discount_amount' => $priceData['discount_amount'],
                 'tax_amount' => $priceData['tax_amount'],
-                'total_price' => $priceData['total_price'] + ($data['deposit_amount'] ?? 0) + $breakfastTotal,
+                'total_price' => $priceData['total_price'] + $breakfastTotal,
                 'include_breakfast' => $includeBreakfast,
                 'pricing_breakdown' => $priceData['breakdown'],
                 'stay_type' => $data['stay_type'] ?? 'daily',
@@ -138,8 +162,9 @@ class BookingService
                 'payment_status' => ($priceData['total_price'] + ($data['deposit_amount'] ?? 0) + $breakfastTotal) <= 0 ? 'paid' : 'unpaid',
                 'notes' => $data['notes'] ?? null,
                 'voucher_code' => $voucher?->code,
-                'source' => $data['source'] ?? 'walk_in',
+                'source' => $bookingSource ? $bookingSource->name : ($data['source'] ?? 'walk_in'),
                 'booking_source_id' => $data['booking_source_id'] ?? null,
+                'guest_type' => $guestType,
             ]);
 
             // Update voucher usage count
@@ -180,9 +205,10 @@ class BookingService
             }
 
             // Audit log
+            $guestName = $booking->guest?->name ?? (\App\Models\Guest::find($data['guest_id'])?->name ?? 'Guest #' . $booking->guest_id);
             \App\Models\AuditLog::log(
                 'booking.created',
-                "Booking #{$booking->id} created for guest {$booking->guest_id}, room {$room->room_number}",
+                "Booking #{$booking->id} created for {$guestName}, room {$room->room_number}",
                 $booking
             );
 
@@ -282,9 +308,10 @@ class BookingService
                 ]);
             }
 
+            $guestName = $booking->guest?->name ?? 'Guest';
             \App\Models\AuditLog::log(
                 'booking.checked_in',
-                "Guest checked in to room {$roomIdentifier} (Booking #{$booking->id})"
+                "Guest {$guestName} checked in to room {$roomIdentifier} (Booking #{$booking->id})"
                     . ($securityDeposit > 0 ? " + Security Deposit Rp " . number_format($securityDeposit, 0, ',', '.') : '')
                     . ($isEarlyCheckIn ? " [CHECK-IN PAKSA sebelum jadwal " . $booking->check_in->format('d M Y') . "]" : ''),
                 $booking
@@ -379,7 +406,7 @@ class BookingService
             // Calculate final bill including any POS charges
             $posCharges = $booking->posOrders()
                 ->where('payment_status', 'unpaid')
-                ->where('status', 'completed')
+                ->where('status', '!=', 'cancelled')
                 ->sum('total_amount');
 
             $additionalCharges = Transaction::where('booking_id', $booking->id)
@@ -416,7 +443,7 @@ class BookingService
             // Calculate final bill including any POS charges
             $posCharges = $booking->posOrders()
                 ->where('payment_status', 'unpaid')
-                ->where('status', 'completed')
+                ->where('status', '!=', 'cancelled')
                 ->sum('total_amount');
 
             $additionalCharges = Transaction::where('booking_id', $booking->id)
@@ -440,8 +467,13 @@ class BookingService
                 
                 // Allow manual override of refund amount
                 $manualRefund = request('manual_refund_amount');
-                if ($manualRefund !== null && is_numeric($manualRefund) && (float) $manualRefund >= 0) {
-                    $refundAmount = (float) $manualRefund;
+                if ($manualRefund !== null) {
+                    if (is_string($manualRefund)) {
+                        $manualRefund = preg_replace('/[^0-9]/', '', $manualRefund);
+                    }
+                    if (is_numeric($manualRefund) && (float) $manualRefund >= 0) {
+                        $refundAmount = (float) $manualRefund;
+                    }
                 }
                 
                 $bankAccountId = request('bank_account_id');
@@ -499,9 +531,9 @@ class BookingService
             // checkout bill above and has now been paid via the room, so mark them
             // paid (otherwise they keep showing 'unpaid' in the POS list forever).
             $booking->posOrders()
-                ->where('status', 'completed')
+                ->where('status', '!=', 'cancelled')
                 ->where('payment_status', 'unpaid')
-                ->update(['payment_status' => 'paid']);
+                ->update(['payment_status' => 'paid', 'status' => 'completed']);
 
             // Mark room as Checkout after checkout (Only for real rooms)
             if (!$booking->is_custom && $booking->room) {
@@ -583,9 +615,10 @@ class BookingService
             }
 
             $roomIdentifier = $booking->is_custom ? $booking->custom_room_name : ($booking->room ? $booking->room->room_number : 'N/A');
+            $guestName = $booking->guest?->name ?? 'Guest';
             \App\Models\AuditLog::log(
                 'booking.checked_out',
-                "Guest checked out from room {$roomIdentifier} (Booking #{$booking->id}). Total: {$totalInvoice}, Paid: {$alreadyPaid}.",
+                "Guest {$guestName} checked out from room {$roomIdentifier} (Booking #{$booking->id}). Total: {$totalInvoice}, Paid: {$alreadyPaid}.",
                 $booking
             );
 
@@ -742,18 +775,15 @@ class BookingService
         $newCheckInDT = $this->combineDateAndTime($checkIn, $checkInTime, '14:00');
         $newCheckOutDT = $this->combineDateAndTime($checkOut, $checkOutTime, '12:00');
 
-        $availableStatuses = ['Available', 'available', 'Clean', 'clean'];
-        // Allow In-House rooms for future bookings (precise overlap check below handles conflicts)
-        if ($checkIn->startOfDay()->gt(Carbon::today())) {
-            $availableStatuses[] = 'In-House';
-            $availableStatuses[] = 'Checkin';
-        }
+        // Rooms that are physically out of service/maintenance cannot be booked.
+        // Rooms that are Checkout, Dirty, Clean, or In-House are allowed because booking schedule conflict check below handles date availability.
+        $unavailableStatuses = ['Maintenance', 'maintenance', 'Out of Order', 'out_of_order', 'Closed', 'closed'];
 
         $query = Room::query()
-            ->when(!$includeUnavailable, function ($q) use ($availableStatuses) {
-                return $q->whereIn('status', $availableStatuses);
+            ->when(!$includeUnavailable, function ($q) use ($unavailableStatuses) {
+                return $q->whereNotIn('status', $unavailableStatuses);
             })
-            ->when($stayType === 'monthly', function ($q) {
+            ->when(in_array($stayType, ['monthly', 'yearly']), function ($q) {
                 return $q->where('is_kos', true);
             })
             ->with('roomType');
@@ -876,7 +906,7 @@ class BookingService
             $totalBasePrice = (float) $manualPrice * $kostMonths;
         } elseif ($stayType === 'monthly' && $nights >= 25 && $manualPrice === null) {
             $kostMonths = max(1, (int) round($nights / 30));
-            $baseKosPrice = (float) ($room->price_kos ?? $room->price_public ?? 0);
+            $baseKosPrice = (float) ($room->price_kos ?? ($room->price_public ? $room->price_public * 30 : 0));
             // Look up pricing tier for (room, duration_months)
             $tier = $room->kostPricingTiers()
                 ->where('duration_months', $kostMonths)

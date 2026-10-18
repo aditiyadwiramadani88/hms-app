@@ -177,10 +177,18 @@
                             </div>
                         </div>
                         <div class="mb-3">
-                            <label for="booking_source_id" class="form-label">Sumber Booking</label>
-                            <select class="form-select" id="booking_source_id" name="booking_source_id" style="width:100%">
+                            <label for="booking_source_id" class="form-label">Sumber Booking <span class="text-danger">*</span></label>
+                            <select class="form-select" id="booking_source_id" name="booking_source_id" style="width:100%" required>
                                 <option value="">-- Pilih Sumber --</option>
+                                @if(isset($bookingSources))
+                                    @foreach($bookingSources as $src)
+                                        <option value="{{ $src->id }}" {{ old('booking_source_id') == $src->id ? 'selected' : '' }}>{{ $src->name }}</option>
+                                    @endforeach
+                                @endif
                             </select>
+                            @error('booking_source_id')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
                         </div>
                     </div>
                 </div>
@@ -304,7 +312,11 @@
                             <select class="form-select" id="filter_room_type">
                                 <option value="">All Types</option>
                                 @foreach($roomTypes as $type)
-                                    <option value="{{ $type->id }}">{{ $type->name }}</option>
+                                    <option value="{{ $type->id }}"
+                                            data-has-kos="{{ $type->rooms()->where('is_kos', true)->exists() ? '1' : '0' }}"
+                                            data-has-daily="{{ $type->rooms()->where('is_kos', false)->exists() ? '1' : '0' }}">
+                                        {{ $type->name }}
+                                    </option>
                                 @endforeach
                             </select>
                         </div>
@@ -448,11 +460,35 @@
             }).on('change', function() { if($('#room_id').val()) loadAvailableRooms(); });
             $('#guest_category_select').select2({ dropdownParent: $('#addGuestModal') });
 
-            $.getJSON('{{ route("booking-sources.api") }}', function(data) {
-                $.each(data, function(i, src) {
-                    $('#booking_source_id').append(new Option(src.name, src.id));
+            if ($('#booking_source_id option').length <= 1) {
+                $.getJSON('{{ route("booking-sources.api") }}', function(data) {
+                    $.each(data, function(i, src) {
+                        $('#booking_source_id').append(new Option(src.name, src.id));
+                    });
+                    $('#booking_source_id').select2({ placeholder: '-- Pilih Sumber (Wajib) --', allowClear: false });
                 });
-                $('#booking_source_id').select2({ placeholder: '-- Pilih Sumber --', allowClear: true });
+            } else {
+                $('#booking_source_id').select2({ placeholder: '-- Pilih Sumber (Wajib) --', allowClear: false });
+            }
+
+            $('#bookingForm').on('submit', function(e) {
+                if (!$('#booking_source_id').val()) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    if (typeof Toastify === 'function') {
+                        Toastify({
+                            text: "Sumber booking wajib dipilih!",
+                            duration: 3500,
+                            gravity: "top",
+                            position: "right",
+                            backgroundColor: "#f06548",
+                        }).showToast();
+                    } else {
+                        alert("Sumber booking wajib dipilih!");
+                    }
+                    $('#booking_source_id').select2('open');
+                    return false;
+                }
             });
         });
 
@@ -833,8 +869,34 @@
                 loadAvailableRooms();
             };
 
+            function syncRoomTypeFilter(stayType) {
+                const select = document.getElementById('filter_room_type');
+                if (!select) return;
+                let currentValHidden = false;
+                Array.from(select.options).forEach(opt => {
+                    if (!opt.value) return; // 'All Types'
+                    const hasKos = opt.getAttribute('data-has-kos') === '1';
+                    const hasDaily = opt.getAttribute('data-has-daily') === '1';
+                    let show = true;
+                    if (stayType === 'monthly' || stayType === 'yearly') {
+                        show = hasKos;
+                    } else {
+                        show = hasDaily;
+                    }
+                    opt.style.display = show ? '' : 'none';
+                    opt.disabled = !show;
+                    if (!show && select.value === opt.value) {
+                        currentValHidden = true;
+                    }
+                });
+                if (currentValHidden) {
+                    select.value = '';
+                }
+            }
+
             function loadAvailableRooms() {
                 const stayType = document.querySelector('input[name="stay_type"]:checked').value;
+                syncRoomTypeFilter(stayType);
                 const showAll = document.getElementById('show_all_rooms')?.checked || false;
                 const params = new URLSearchParams({
                     check_in: checkIn.value,

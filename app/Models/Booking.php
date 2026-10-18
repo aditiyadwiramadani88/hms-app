@@ -141,4 +141,15 @@ class Booking extends Model
             ->first();
         return $log ? ($log->user->name ?? '-') : '-';
     }
+
+    /**
+     * Get the total duration of the booking in whole calendar nights (always integer, never float).
+     */
+    public function getTotalNightsAttribute(): int
+    {
+        if (!$this->check_in || !$this->check_out) {
+            return 1;
+        }
+        return max(1, (int) $this->check_in->copy()->startOfDay()->diffInDays($this->check_out->copy()->startOfDay()));
+    }
 }

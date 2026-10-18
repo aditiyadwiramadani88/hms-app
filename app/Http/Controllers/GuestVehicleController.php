@@ -124,9 +124,10 @@ class GuestVehicleController extends Controller
                 'notes' => $validated['notes'] ?? null,
             ]);
 
+            $userName = Auth::user()?->name ?? ('User #' . Auth::id());
             AuditLog::log(
                 'vehicle.updated',
-                "Kendaraan {$guestVehicle->plate_number} diupdate oleh User #" . Auth::id(),
+                "Kendaraan {$guestVehicle->plate_number} diupdate oleh {$userName}",
                 $guestVehicle
             );
 

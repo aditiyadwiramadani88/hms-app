@@ -59,6 +59,11 @@
                         <div class="col-sm-auto">
                             <div class="d-flex gap-1 flex-wrap">
                                 @if(!auth()->user()->hasRole('Front Page Only'))
+                                @canany(['custom-invoices.create', 'manage reservations'])
+                                <a href="{{ route('custom-invoices.create') }}" class="btn btn-soft-primary">
+                                    <i class="ri-file-add-line align-bottom me-1"></i> Add Custom Invoice
+                                </a>
+                                @endcanany
                                 <a href="{{ route('custom-invoices.index') }}" class="btn btn-soft-info">
                                     <i class="ri-file-text-line align-bottom me-1"></i> Custom Invoice
                                 </a>
@@ -82,7 +87,7 @@
                             <div class="col-xxl-2 col-sm-6">
                                 <div class="search-box">
                                     <input type="text" class="form-control search" name="search"
-                                           value="{{ request('search') }}" placeholder="Search guest / ID...">
+                                           value="{{ request('search') }}" placeholder="Cari tamu / kamar / ID...">
                                     <i class="ri-search-line search-icon"></i>
                                 </div>
                             </div>

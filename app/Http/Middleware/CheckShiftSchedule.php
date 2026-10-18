@@ -84,7 +84,7 @@ class CheckShiftSchedule
                 $shiftEnd->addDay();
             }
 
-            // If we are still within yesterday's overnight shift period
+            // If we are still within yesterday's overnight shift period (+ 30 min tolerance)
             if ($now->gte($shiftStart) && $now->lte($shiftEnd)) {
                 if (!$this->hasClockedIn($user->id, $yesterday)) {
                     return redirect()->route('attendance.index')->with('error', 'Anda harus absen masuk (Check-In) terlebih dahulu sebelum dapat mengakses sistem.');

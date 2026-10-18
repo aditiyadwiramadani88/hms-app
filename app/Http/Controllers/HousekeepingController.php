@@ -323,20 +323,13 @@ class HousekeepingController extends Controller
 
         $created = 0;
         foreach ($roomIds as $roomId) {
-            \App\Models\CleaningTask::create([
-                'hotel_id' => $hotelId,
-                'room_id' => $roomId,
-                'assigned_to' => $assignedTo,
-                'assigned_by' => auth()->id(),
-                'status' => \App\Models\CleaningTask::STATUS_BELUM_MULAI,
-            ]);
-
-            // Update room assigned_staff_id and status to Being Cleaned
-            $room = \App\Models\Room::find($roomId);
-            $room->update(['assigned_staff_id' => $assignedTo]);
-            if ($room->status !== 'Room Refresh' && $room->status !== 'In-House') {
-                $room->update(['status' => 'Room Refresh']);
+            $room = Room::find($roomId);
+            if (!$room) {
+                continue;
             }
+
+            $this->cleaningTaskService->createTask($room, $assignedTo, auth()->id());
+            $room->update(['assigned_staff_id' => $assignedTo]);
 
             $created++;
         }

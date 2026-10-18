@@ -140,7 +140,13 @@ class RoomController extends Controller
      */
     public function show(Room $room)
     {
-        $room->load(['roomType', 'bookings.guest', 'maintenanceLogs']);
+        $room->load([
+            'roomType',
+            'bookings' => fn($q) => $q->with('guest')->latest()->take(15),
+            'maintenanceLogs' => fn($q) => $q->with('reportedBy')->latest()->take(10),
+            'assignedStaff',
+            'checklistTemplates',
+        ]);
 
         return view('rooms.show', compact('room'));
     }

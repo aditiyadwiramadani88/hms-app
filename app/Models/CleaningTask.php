@@ -121,11 +121,21 @@ class CleaningTask extends Model
                 } else {
                     // Find the last booking for this room to determine category
                     $lastBooking = \App\Models\Booking::where('room_id', $room->id)
+                        ->with(['bookingSource', 'guest.guestCategory'])
                         ->orderByDesc('created_at')
                         ->first();
 
-                    if ($lastBooking && in_array($lastBooking->guest_type, ['sales', 'umum', 'online', 'kos'])) {
-                        $bonusCategory = $lastBooking->guest_type;
+                    if ($lastBooking) {
+                        $sourceName = strtolower(trim($lastBooking->bookingSource?->name ?? $lastBooking->source ?? ''));
+                        if ($lastBooking->guest_type === 'sales' || str_contains($sourceName, 'sales') || ($lastBooking->guest?->guestCategory && str_contains(strtolower($lastBooking->guest->guestCategory->name), 'sales')) || !empty($lastBooking->guest?->company_name)) {
+                            $bonusCategory = 'sales';
+                        } elseif ($lastBooking->guest_type === 'kos' || in_array($sourceName, ['kos', 'kost']) || $lastBooking->stay_type === 'monthly' || $lastBooking->stay_type === 'yearly') {
+                            $bonusCategory = 'kos';
+                        } elseif ($lastBooking->guest_type === 'online' || in_array($sourceName, ['traveloka', 'tiket.com', 'agoda', 'booking.com', 'airbnb', 'ota']) || str_contains($sourceName, 'online')) {
+                            $bonusCategory = 'online';
+                        } elseif (in_array($lastBooking->guest_type, ['sales', 'umum', 'online', 'kos'])) {
+                            $bonusCategory = $lastBooking->guest_type;
+                        }
                     }
                 }
             }
@@ -142,6 +152,12 @@ class CleaningTask extends Model
                 "bonus_category" => $bonusCategory,
                 "notes" => $notes,
             ]);
+        });
+
+        static::saving(function ($task) {
+            if ($task->status === self::STATUS_SELESAI && !$task->completed_at) {
+                $task->completed_at = now();
+            }
         });
 
         static::updated(function ($task) {

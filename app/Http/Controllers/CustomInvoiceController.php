@@ -30,10 +30,6 @@ class CustomInvoiceController extends Controller
             });
         }
 
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-
         if ($request->filled('source')) {
             $query->where('source', $request->source);
         }
@@ -55,10 +51,9 @@ class CustomInvoiceController extends Controller
 
     public function create()
     {
-        $bankAccounts = BankAccount::where('hotel_id', active_hotel_id())->where('is_active', true)->get();
-        $rooms = Room::where('hotel_id', active_hotel_id())->available()->get();
+        $rooms = Room::with('roomType')->orderBy('room_number')->get();
 
-        return view('custom-invoices.create', compact('bankAccounts', 'rooms'));
+        return view('custom-invoices.create', compact('rooms'));
     }
 
     public function store(Request $request)
@@ -74,15 +69,7 @@ class CustomInvoiceController extends Controller
             'sell_price' => 'required|numeric|min:0',
             'agent_commission' => 'nullable|numeric|min:0',
             'notes' => 'nullable|string',
-            'create_booking' => 'nullable|boolean',
-            'room_id' => 'nullable|required_if:create_booking,1|exists:rooms,id',
-            'down_payment' => 'nullable|numeric|min:0',
-            'bank_account_id' => 'nullable|exists:bank_accounts,id',
         ]);
-
-        if (($validated['down_payment'] ?? 0) > 0 && empty($validated['bank_account_id'])) {
-            return back()->withErrors(['bank_account_id' => 'Akun pembayaran wajib dipilih jika ada nominal bayar.'])->withInput();
-        }
 
         try {
             $result = DB::transaction(function () use ($validated) {
@@ -106,75 +93,10 @@ class CustomInvoiceController extends Controller
                     'sell_price' => $validated['sell_price'],
                     'agent_commission' => $validated['agent_commission'] ?? 0,
                     'notes' => $validated['notes'] ?? null,
-                    'status' => 'draft',
+                    'status' => 'paid',
+                    'paid_at' => now(),
                     'created_by' => auth()->id(),
                 ]);
-
-                if (!empty($validated['create_booking'])) {
-                    $booking = Booking::create([
-                        'hotel_id' => active_hotel_id(),
-                        'guest_id' => $validated['guest_id'],
-                        'room_id' => $validated['room_id'],
-                        'is_custom' => true,
-                        'custom_room_name' => $validated['room_name'],
-                        'user_id' => auth()->id(),
-                        'check_in' => $checkIn,
-                        'check_out' => $checkOut,
-                        'adults' => $validated['adults'],
-                        'children' => $validated['children'] ?? 0,
-                        'base_price' => $validated['sell_price'],
-                        'total_price' => $validated['sell_price'],
-                        'status' => 'confirmed',
-                        'payment_status' => 'unpaid',
-                        'stay_type' => 'daily',
-                        'source' => 'direct',
-                        'guest_type' => 'umum',
-                        'notes' => "[CUSTOM INVOICE #{$invoiceNumber}] " . ($validated['notes'] ?? ''),
-                    ]);
-
-                    Transaction::create([
-                        'hotel_id' => active_hotel_id(),
-                        'booking_id' => $booking->id,
-                        'guest_id' => $validated['guest_id'],
-                        'user_id' => auth()->id(),
-                        'type' => 'charge',
-                        'amount' => $validated['sell_price'],
-                        'reference_id' => $invoiceNumber,
-                        'description' => "Custom Invoice: {$validated['room_name']}",
-                        'status' => 'success',
-                    ]);
-
-                    $invoice->update(['booking_id' => $booking->id]);
-                }
-
-                if (($validated['down_payment'] ?? 0) > 0) {
-                    $account = BankAccount::find($validated['bank_account_id']);
-                    if (!$account) {
-                        throw new \Exception("Akun pembayaran tidak ditemukan.");
-                    }
-
-                    $paymentMethod = str_contains(strtolower($account->name), 'tunai') ? 'cash' : 'bank_transfer';
-
-                    Transaction::create([
-                        'hotel_id' => active_hotel_id(),
-                        'guest_id' => $validated['guest_id'],
-                        'user_id' => auth()->id(),
-                        'bank_account_id' => $account->id,
-                        'type' => 'payment',
-                        'amount' => $validated['down_payment'],
-                        'payment_method' => $paymentMethod,
-                        'description' => "Payment for Custom Invoice {$invoiceNumber}",
-                        'status' => 'success',
-                    ]);
-
-                    $account->increment('balance', $validated['down_payment']);
-
-                    $invoice->update([
-                        'payment_method' => $paymentMethod,
-                        'paid_at' => now(),
-                        'status' => 'paid',
-                    ]);
-                }
 
                 return $invoice;
             });
@@ -202,10 +124,9 @@ class CustomInvoiceController extends Controller
     public function edit(CustomInvoice $customInvoice)
     {
         $customInvoice->load(['guest', 'booking']);
-        $bankAccounts = BankAccount::where('hotel_id', active_hotel_id())->where('is_active', true)->get();
-        $rooms = Room::where('hotel_id', active_hotel_id())->available()->get();
+        $rooms = Room::with('roomType')->orderBy('room_number')->get();
 
-        return view('custom-invoices.edit', compact('customInvoice', 'bankAccounts', 'rooms'));
+        return view('custom-invoices.edit', compact('customInvoice', 'rooms'));
     }
 
     public function update(Request $request, CustomInvoice $customInvoice)

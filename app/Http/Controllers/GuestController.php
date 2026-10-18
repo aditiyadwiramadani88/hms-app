@@ -18,54 +18,97 @@ class GuestController extends Controller
         $query = Guest::query();
 
         if ($request->filled('name')) {
-            $query->where('name', 'like', '%' . $request->name . '%');
+            $query->where('guests.name', 'like', '%' . $request->name . '%');
         }
 
         if ($request->filled('email')) {
-            $query->where('email', 'like', '%' . $request->email . '%');
+            $query->where('guests.email', 'like', '%' . $request->email . '%');
         }
 
         if ($request->filled('phone')) {
-            $query->where('phone', 'like', '%' . $request->phone . '%');
+            $query->where('guests.phone', 'like', '%' . $request->phone . '%');
         }
 
         if ($request->filled('id_number')) {
-            $query->where('id_number', 'like', '%' . $request->id_number . '%');
+            $query->where('guests.id_number', 'like', '%' . $request->id_number . '%');
         }
 
         if ($request->filled('company_name')) {
-            $query->where('company_name', 'like', '%' . $request->company_name . '%');
+            $query->where('guests.company_name', 'like', '%' . $request->company_name . '%');
         }
 
         if ($request->filled('customer_type_id')) {
-            $query->where('customer_type_id', $request->customer_type_id);
+            $query->where('guests.customer_type_id', $request->customer_type_id);
         }
 
         if ($request->filled('guest_category_id')) {
-            $query->where('guest_category_id', $request->guest_category_id);
+            $query->where('guests.guest_category_id', $request->guest_category_id);
         }
 
         if ($request->filled('citizenship_code')) {
-            $query->where('citizenship_code', $request->citizenship_code);
+            $query->where('guests.citizenship_code', $request->citizenship_code);
         }
 
         if ($request->filled('search')) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%")
-                    ->orWhere('phone', 'like', "%{$search}%")
-                    ->orWhere('id_number', 'like', "%{$search}%")
-                    ->orWhere('company_name', 'like', "%{$search}%")
-                    ->orWhere('legacy_customer_code', 'like', "%{$search}%")
-                    ->orWhere('vehicle_number', 'like', "%{$search}%");
+                $q->where('guests.name', 'like', "%{$search}%")
+                    ->orWhere('guests.email', 'like', "%{$search}%")
+                    ->orWhere('guests.phone', 'like', "%{$search}%")
+                    ->orWhere('guests.id_number', 'like', "%{$search}%")
+                    ->orWhere('guests.company_name', 'like', "%{$search}%")
+                    ->orWhere('guests.legacy_customer_code', 'like', "%{$search}%")
+                    ->orWhere('guests.vehicle_number', 'like', "%{$search}%");
             });
         }
 
+        // Table Sorting
+        $sortBy = $request->get('sort_by', 'name');
+        $sortDir = strtolower($request->get('sort_dir', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+        $query->select('guests.*')->withCount('bookings');
+
+        switch ($sortBy) {
+            case 'name':
+                $query->orderBy('guests.name', $sortDir);
+                break;
+            case 'code':
+            case 'legacy_customer_code':
+                $query->orderBy('guests.legacy_customer_code', $sortDir);
+                break;
+            case 'phone':
+                $query->orderBy('guests.phone', $sortDir);
+                break;
+            case 'id_number':
+                $query->orderBy('guests.id_number', $sortDir);
+                break;
+            case 'category':
+                $query->leftJoin('guest_categories', 'guests.guest_category_id', '=', 'guest_categories.id')
+                    ->orderBy('guest_categories.name', $sortDir);
+                break;
+            case 'customer_type':
+                $query->leftJoin('customer_types', 'guests.customer_type_id', '=', 'customer_types.id')
+                    ->orderBy('customer_types.name', $sortDir);
+                break;
+            case 'company_name':
+                $query->orderBy('guests.company_name', $sortDir);
+                break;
+            case 'vehicle':
+            case 'vehicle_number':
+                $query->orderBy('guests.vehicle_number', $sortDir);
+                break;
+            case 'bookings_count':
+                $query->orderBy('bookings_count', $sortDir);
+                break;
+            case 'created_at':
+                $query->orderBy('guests.created_at', $sortDir);
+                break;
+            default:
+                $query->orderBy('guests.name', $sortDir);
+                break;
+        }
+
         $guests = $query->with(['customerType:id,name', 'guestCategory:id,name'])
-            ->select('guests.id', 'guests.name', 'guests.email', 'guests.phone', 'guests.id_number', 'guests.company_name', 'guests.guest_category_id', 'guests.customer_type_id', 'guests.legacy_customer_code', 'guests.vehicle_number')
-            ->withCount('bookings')
-            ->orderBy('name')
             ->paginate(15)
             ->withQueryString();
 

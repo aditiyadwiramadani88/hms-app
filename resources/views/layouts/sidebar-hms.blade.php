@@ -113,7 +113,34 @@
                             @can('manage pos')
                             @if(!auth()->user()->hasRole('Front Page Only'))
                             <li class="nav-item">
-                                <a href="{{ route('pos.index') }}" class="nav-link">{{ __('translation.pos') }}</a>
+                                <a class="nav-link menu-link" href="#sidebarFrontOfficePOS" data-bs-toggle="collapse" role="button" aria-expanded="{{ request()->routeIs('pos.*', 'inventory.*', 'warehouse.*') ? 'true' : 'false' }}">
+                                    <span>{{ __('translation.pos') }}</span>
+                                    <span class="menu-arrow"></span>
+                                </a>
+                                <div class="collapse {{ request()->routeIs('pos.*', 'inventory.*', 'warehouse.*') ? 'show' : '' }}" id="sidebarFrontOfficePOS">
+                                    <ul class="nav nav-sm flex-column ps-3">
+                                        <li class="nav-item">
+                                            <a href="{{ route('pos.index') }}" class="nav-link {{ request()->routeIs('pos.index', 'pos.create', 'pos.show') && !request()->routeIs('pos.rental.*') ? 'active' : '' }}">Kasir POS</a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a href="{{ route('pos.rental.index') }}" class="nav-link {{ request()->routeIs('pos.rental.*') ? 'active' : '' }}">Rental POS</a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a href="{{ route('inventory.index') }}" class="nav-link">{{ __('translation.inventory') }}</a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a href="{{ route('inventory.categories.index') }}" class="nav-link">{{ __('translation.list') }} Categories</a>
+                                        </li>
+                                        @can('manage warehouse')
+                                        <li class="nav-item">
+                                            <a href="{{ route('warehouse.index') }}" class="nav-link">Gudang & Etalase</a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a href="{{ route('warehouse.transfer.index') }}" class="nav-link">Mutasi Lintas Gudang</a>
+                                        </li>
+                                        @endcan
+                                    </ul>
+                                </div>
                             </li>
                             @endif
                             @endcan
@@ -135,15 +162,26 @@
                 </li>
                 @endif
 
-                {{-- Housekeeping Dashboard (Admin/Manager) --}}
+                {{-- Housekeeping Menu (Admin/Manager) --}}
                 @can('manage housekeeping')
                 <li class="nav-item">
-                    <a class="nav-link menu-link" href="{{ route('housekeeping.index') }}">
+                    <a class="nav-link menu-link {{ request()->routeIs('housekeeping.index', 'reports.housekeeping*') ? 'active' : '' }}" href="#sidebarHousekeeping" data-bs-toggle="collapse" role="button" aria-expanded="{{ request()->routeIs('housekeeping.index', 'reports.housekeeping*') ? 'true' : 'false' }}" aria-controls="sidebarHousekeeping">
                         <i class="ri-building-4-line"></i> <span>Housekeeping</span>
+                        <span class="menu-arrow"></span>
                     </a>
+                    <div class="collapse menu-dropdown {{ request()->routeIs('housekeeping.index', 'reports.housekeeping*') ? 'show' : '' }}" id="sidebarHousekeeping">
+                        <ul class="nav nav-sm flex-column">
+                            <li class="nav-item">
+                                <a href="{{ route('housekeeping.index') }}" class="nav-link {{ request()->routeIs('housekeeping.index') ? 'active' : '' }}">Dashboard</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="{{ route('reports.housekeeping') }}" class="nav-link {{ request()->routeIs('reports.housekeeping*') ? 'active' : '' }}">Laporan Housekeeping</a>
+                            </li>
+                        </ul>
+                    </div>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link menu-link" href="{{ route('housekeeping.checker.dashboard') }}">
+                    <a class="nav-link menu-link {{ request()->routeIs('housekeeping.checker.*') ? 'active' : '' }}" href="{{ route('housekeeping.checker.dashboard') }}">
                         <i class="ri-checkbox-multiple-line"></i> <span>QC / Checker</span>
                     </a>
                 </li>
@@ -257,14 +295,6 @@
                 </li>
                 @endcanany
 
-                {{-- My Leaves (for all employees with permission) --}}
-                @can('leaves.request')
-                <li class="nav-item">
-                    <a class="nav-link menu-link" href="{{ route('my-leaves.index') }}">
-                        <i class="ri-calendar-event-line"></i> <span>Cuti Saya</span>
-                    </a>
-                </li>
-                @endcan
 
                 <!-- HR & PAYROLL -->
                 @can('manage leaves')
@@ -339,6 +369,7 @@
                                 <a href="{{ route('guest-vehicles.index') }}" class="nav-link">Master Kendaraan</a>
                             </li>
                             @endcan
+                            {{-- 
                             <li class="nav-item">
                                 <a class="nav-link menu-link" href="#sidebarPOS" data-bs-toggle="collapse" role="button" aria-expanded="false">
                                     <span>{{ __('translation.pos') }}</span>
@@ -365,6 +396,7 @@
                                     </ul>
                                 </div>
                             </li>
+                            --}}
                         </ul>
                     </div>
                 </li>
@@ -517,11 +549,6 @@
                                 <a href="{{ route('reports.ob-performance') }}" class="nav-link">Performa OB</a>
                             </li>
                             @endcanany
-                            @can('manage housekeeping')
-                            <li class="nav-item">
-                                <a href="{{ route('reports.housekeeping') }}" class="nav-link">Laporan Housekeeping</a>
-                            </li>
-                            @endcan
                             @canany(['view reports', 'reports.transactions'])
                             <li class="nav-item">
                                 <a href="{{ route('reports.daily') }}" class="nav-link">Laporan Harian</a>

@@ -58,12 +58,11 @@
         <div class="card-body py-2">
             <div class="d-flex align-items-center gap-2 overflow-auto" style="white-space: nowrap;">
                 <span class="fw-semibold me-2 text-primary">⚡ {{ __('housekeeping.quick_actions') }}:</span>
-                <button class="btn btn-sm btn-light border shadow-none"><i class="ri-checkbox-multiple-line text-success"></i> {{ __('housekeeping.select_all_dirty') }}</button>
+                <button class="btn btn-sm btn-light border shadow-none" data-bs-toggle="modal" data-bs-target="#quickAssignModal" onclick="setTimeout(toggleAllDirty, 300);"><i class="ri-checkbox-multiple-line text-success"></i> {{ __('housekeeping.select_all_dirty') }}</button>
                 <button class="btn btn-sm btn-light border shadow-none" data-bs-toggle="modal" data-bs-target="#quickAssignModal"><i class="ri-group-line text-primary"></i> {{ __('housekeeping.assign_bulk') }}</button>
                 <button class="btn btn-sm btn-light border shadow-none" data-bs-toggle="modal" data-bs-target="#autoAssignModal"><i class="ri-user-shared-line text-success"></i> Auto Assign</button>
                 <a href="{{ route('reports.housekeeping', ['date' => now()->toDateString()]) }}" class="btn btn-sm btn-light border shadow-none"><i class="ri-file-chart-line text-info"></i> {{ __('housekeeping.today_report') }}</a>
-                <button class="btn btn-sm btn-light border shadow-none"><i class="ri-notification-3-line text-warning"></i> {{ __('housekeeping.ob_notification') }}</button>
-                <button class="btn btn-sm btn-light border shadow-none"><i class="ri-list-check text-secondary"></i> {{ __('housekeeping.checklist_template') }}</button>
+                <a href="{{ route('housekeeping.checklist-templates.index') }}" class="btn btn-sm btn-light border shadow-none"><i class="ri-list-check text-secondary"></i> {{ __('housekeeping.checklist_template') }}</a>
             </div>
         </div>
     </div>

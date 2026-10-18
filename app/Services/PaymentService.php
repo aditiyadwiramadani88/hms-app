@@ -261,7 +261,8 @@ class PaymentService
         $transactions = $booking->transactions()->where('status', 'success')->get();
 
         $totalCharges = $booking->total_price
-            + $booking->posOrders()->where('status', 'completed')->sum('total_amount');
+            + $booking->posOrders()->where('status', '!=', 'cancelled')->sum('total_amount');
+
         $totalPayments = $transactions->where('type', 'payment')->sum('amount');
         $totalRefunds = $transactions->where('type', 'refund')->sum('amount');
         $balance = $totalCharges - $totalPayments + $totalRefunds;

@@ -15,10 +15,10 @@ class BookingPriceService
             ->where('is_deposit', false)
             ->sum('amount');
 
-        $posUnpaid = $booking->posOrders()
-            ->where('status', 'completed')
-            ->where('payment_status', 'unpaid')
+        $posTotal = $booking->posOrders()
+            ->where('status', '!=', 'cancelled')
             ->sum('total_amount');
+
 
         // total_price already includes the deposit set at booking creation
         // (DEPOSIT-{id} charge) — only add deposit charges made afterwards
@@ -33,7 +33,8 @@ class BookingPriceService
             })
             ->sum('amount');
 
-        return $booking->total_price + $manualCharges + $posUnpaid + $extraDeposit;
+        return $booking->total_price + $manualCharges + $posTotal + $extraDeposit;
+
     }
 
     public static function remainingBalance(Booking $booking): float

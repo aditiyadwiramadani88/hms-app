@@ -3,17 +3,35 @@
 <head>
     <title>POS Receipt - {{ $order->order_number }}</title>
     <style>
-        body { font-family: 'Courier New', Courier, monospace; width: 80mm; margin: 0; padding: 5mm; font-size: 12px; }
-        .header { text-align: center; margin-bottom: 5mm; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Courier New', Courier, monospace; 
+            width: 80mm; 
+            max-width: 100%; 
+            margin: 0 auto; 
+            padding: 3mm 4mm; 
+            font-size: 11px; 
+            line-height: 1.25; 
+            color: #000; 
+            background: #fff; 
+        }
+        .header { text-align: center; margin-bottom: 2mm; }
+        .header h3 { font-size: 13px; font-weight: bold; margin-bottom: 1mm; }
+        .header p { font-size: 10px; margin: 0.5mm 0; }
         .divider { border-top: 1px dashed #000; margin: 2mm 0; }
-        .details { margin-bottom: 5mm; }
-        .item-table { width: 100%; border-collapse: collapse; }
-        .item-table td { padding: 1mm 0; }
+        .details { margin-bottom: 2mm; }
+        .item-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .item-table td { padding: 0.8mm 0; }
         .text-right { text-align: right; }
         .label { font-weight: bold; }
-        .footer { text-align: center; margin-top: 5mm; font-size: 10px; }
+        p.info-line { margin: 1mm 0; font-size: 11px; word-break: break-word; }
+        .footer { text-align: center; margin-top: 2mm; font-size: 10px; }
+        .footer p { margin: 1mm 0; }
+        @page { size: auto; margin: 2mm; }
         @media print {
-            .no-print { display: none; }
+            body { width: 100%; max-width: 80mm; padding: 1mm 2mm; }
+            .no-print { display: none !important; }
+            .receipt-box { page-break-inside: avoid; }
         }
     </style>
 </head>
@@ -33,9 +51,12 @@
         <p><span class="label">Order:</span> {{ $order->order_number }}</p>
         <p><span class="label">Tamu:</span> {{ $order->guest->name ?? 'Walk-in' }}</p>
         @if($order->booking_id)
-            <p><span class="label">Kamar:</span> {{ $order->booking->room->room_number }}</p>
+            <p><span class="label">Kamar:</span> {{ $order->booking?->room?->room_number ?? ($order->booking?->custom_room_name ?? '-') }}</p>
         @endif
         <p><span class="label">Tanggal:</span> {{ $order->created_at->format('d/m/Y H:i') }}</p>
+        @if($order->payment_method)
+        <p><span class="label">Metode:</span> {{ ucfirst(str_replace('_', ' ', $order->payment_method)) }}</p>
+        @endif
         <p><span class="label">Status:</span> {{ strtoupper($order->payment_status) }}</p>
     </div>
 
@@ -60,10 +81,16 @@
             <td>Subtotal</td>
             <td class="text-right">Rp {{ number_format($order->subtotal, 0, ',', '.') }}</td>
         </tr>
-        @if($order->discount_amount > 0)
+        @if(($order->discount_amount ?? 0) > 0)
         <tr>
             <td>Discount</td>
             <td class="text-right">- Rp {{ number_format($order->discount_amount, 0, ',', '.') }}</td>
+        </tr>
+        @endif
+        @if(($order->tax_amount ?? 0) > 0)
+        <tr>
+            <td>Tax</td>
+            <td class="text-right">Rp {{ number_format($order->tax_amount, 0, ',', '.') }}</td>
         </tr>
         @endif
         <tr style="font-weight: bold; font-size: 14px;">

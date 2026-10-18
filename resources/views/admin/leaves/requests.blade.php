@@ -73,7 +73,23 @@
                                     <td>{{ $req->total_days }}</td>
                                     <td>
                                         @if($req->reason)
-                                            <span title="{{ $req->reason }}">{{ Str::limit($req->reason, 30) }}</span>
+                                            <div class="dropdown d-inline-block">
+                                                <a href="javascript:void(0);" class="text-body text-decoration-none dropdown-toggle d-inline-flex align-items-center gap-1" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false" title="Klik untuk melihat detail alasan">
+                                                    <span>{{ Str::limit($req->reason, 25) }}</span>
+                                                    @if(mb_strlen($req->reason) > 25)
+                                                        <span class="badge bg-light text-primary border border-primary-subtle fs-11 py-0 px-1">
+                                                            <i class="ri-arrow-down-s-line align-middle"></i> Detail
+                                                        </span>
+                                                    @endif
+                                                </a>
+                                                <div class="dropdown-menu p-3 shadow-lg border-0" style="min-width: 280px; max-width: 380px; white-space: normal; word-break: break-word; z-index: 1050;">
+                                                    <div class="d-flex align-items-center justify-content-between mb-2 pb-1 border-bottom">
+                                                        <span class="fs-12 fw-bold text-uppercase text-muted"><i class="ri-file-text-line me-1 text-primary"></i>Detail Alasan Cuti</span>
+                                                        <span class="badge bg-primary-subtle text-primary">{{ $req->leaveType->name }} ({{ $req->total_days }} Hari)</span>
+                                                    </div>
+                                                    <p class="fs-13 mb-0 text-dark" style="line-height: 1.5;">{{ $req->reason }}</p>
+                                                </div>
+                                            </div>
                                         @else
                                             <span class="text-muted">-</span>
                                         @endif

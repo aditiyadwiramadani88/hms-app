@@ -31,7 +31,42 @@ class BankAccountController extends Controller
      */
     public function index(Request $request)
     {
-        $accounts = BankAccount::where('hotel_id', active_hotel_id())
+        $hotelId = active_hotel_id();
+        $startDate = $request->input('start_date');
+        $endDate = $request->input('end_date');
+
+        try {
+            if ($startDate && $endDate) {
+                $periodStart = \Carbon\Carbon::parse($startDate)->startOfDay();
+                $periodEnd = \Carbon\Carbon::parse($endDate)->endOfDay();
+                $periodLabel = $periodStart->translatedFormat('d M Y') . ' - ' . $periodEnd->translatedFormat('d M Y');
+            } elseif ($request->filled('month')) {
+                $monthObj = \Carbon\Carbon::createFromFormat('Y-m', $request->input('month'));
+                $periodStart = $monthObj->copy()->startOfMonth();
+                $periodEnd = $monthObj->copy()->endOfMonth();
+                $periodLabel = $monthObj->translatedFormat('F Y');
+                $startDate = $periodStart->toDateString();
+                $endDate = $periodEnd->toDateString();
+            } else {
+                $monthObj = now();
+                $periodStart = $monthObj->copy()->startOfMonth();
+                $periodEnd = $monthObj->copy()->endOfMonth();
+                $periodLabel = $monthObj->translatedFormat('F Y');
+                $startDate = $periodStart->toDateString();
+                $endDate = $periodEnd->toDateString();
+            }
+        } catch (\Exception $e) {
+            $monthObj = now();
+            $periodStart = $monthObj->copy()->startOfMonth();
+            $periodEnd = $monthObj->copy()->endOfMonth();
+            $periodLabel = $monthObj->translatedFormat('F Y');
+            $startDate = $periodStart->toDateString();
+            $endDate = $periodEnd->toDateString();
+        }
+
+        $month = $periodStart;
+
+        $accounts = BankAccount::where('hotel_id', $hotelId)
             ->withCount(['transactions' => function($query) {
                 $query->where('status', 'success');
             }])
@@ -39,16 +74,28 @@ class BankAccountController extends Controller
 
         $totalBalance = $accounts->sum('balance');
 
-        $month = $request->filled('month')
-            ? \Carbon\Carbon::createFromFormat('Y-m', $request->input('month'))
-            : now();
-        $monthlyReport = $this->reportService->getRevenueReport($month->copy()->startOfMonth(), $month->copy()->endOfMonth());
+        $monthlyReport = $this->reportService->getRevenueReport($periodStart, $periodEnd);
         $monthlyRevenue = $monthlyReport['cash_received'] ?? 0;
         $realizedRevenue = $monthlyReport['realized_revenue'] ?? 0;
         $cashReceivedByMethod = $monthlyReport['cash_received_by_method'] ?? collect();
         $realizedByMethod = $monthlyReport['realized_by_method'] ?? collect();
+        $paymentsByAccount = collect($monthlyReport['payments']['by_account'] ?? []);
 
-        return view('admin.bank-accounts.index', compact('accounts', 'totalBalance', 'monthlyRevenue', 'realizedRevenue', 'month', 'cashReceivedByMethod', 'realizedByMethod'));
+        return view('admin.bank-accounts.index', compact(
+            'accounts',
+            'totalBalance',
+            'monthlyRevenue',
+            'realizedRevenue',
+            'month',
+            'periodStart',
+            'periodEnd',
+            'periodLabel',
+            'startDate',
+            'endDate',
+            'cashReceivedByMethod',
+            'realizedByMethod',
+            'paymentsByAccount'
+        ));
     }
 
     /**

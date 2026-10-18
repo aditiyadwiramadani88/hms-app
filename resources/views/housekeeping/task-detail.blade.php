@@ -129,8 +129,15 @@
                         </div>
                     </div>
 
-                    <!-- Checklist Items with Timeline -->
-                    <h6 class="mb-3"><i class="ri-checkbox-multiple-line me-2"></i>Checklist Cleaning</h6>
+                    <!-- Checklist Items (Sesuai Format Manual) -->
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h6 class="mb-0"><i class="ri-checkbox-multiple-line me-2"></i>Checklist Cleaning (Manual)</h6>
+                        @if($canEdit)
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="checkAllItems()">
+                            <i class="ri-check-double-line me-1"></i> Centang Semua
+                        </button>
+                        @endif
+                    </div>
 
                     @foreach($task->checklistItems as $item)
                     @php
@@ -161,20 +168,13 @@
                                     </div>
                                 </div>
                                 <div class="d-flex align-items-center gap-2">
-                                    @if($item->photo_url && ($item->is_done || $task->status === 'selesai'))
-                                        <img loading="lazy" src="{{ $item->photo_url }}" class="timeline-photo photo-thumb" onclick="showImageModal('{{ $item->photo_url }}', '{{ $item->name }}')">
+                                    @if($item->photo_url)
+                                        <img loading="lazy" src="{{ $item->photo_url }}" class="timeline-photo photo-thumb" onclick="showImageModal('{{ $item->photo_url }}', '{{ $item->name }}')" title="Lihat Foto Bukti">
                                     @endif
-                                    @if($canEdit && (!$item->is_done || $needsRedo))
-                                        <button class="btn btn-sm btn-outline-success" onclick="quickCheck({{ $item->id }})" title="Centang selesai">
-                                            <i class="ri-check-line"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-primary" onclick="openEvidenceModal({{ $item->id }}, '{{ addslashes($item->name) }}', '{{ $item->photo_url }}', '{{ addslashes($item->comment ?? '') }}')">
-                                            <i class="ri-camera-line me-1"></i> Foto
-                                        </button>
-                                    @elseif($canEdit && $item->is_done)
-                                        <button class="btn btn-sm btn-outline-success" onclick="openEvidenceModal({{ $item->id }}, '{{ addslashes($item->name) }}', '{{ $item->photo_url }}', '{{ addslashes($item->comment ?? '') }}')">
-                                            <i class="ri-edit-line me-1"></i> Edit
-                                        </button>
+                                    @if($canEdit)
+                                        <div class="form-check form-switch form-switch-md m-0">
+                                            <input class="form-check-input cursor-pointer" type="checkbox" id="check_{{ $item->id }}" {{ $showAsDone ? 'checked' : '' }} onchange="toggleItemCheck({{ $item->id }}, this.checked)">
+                                        </div>
                                     @endif
                                 </div>
                             </div>
@@ -450,14 +450,48 @@
         finally { btn.disabled = false; btn.innerHTML = '<i class="ri-check-line me-1"></i> Simpan & Centang'; }
     }
 
-    async function quickCheck(itemId) {
+    async function toggleItemCheck(itemId, isChecked) {
         try {
             const url = `{{ route('housekeeping.my-tasks.checklist.update', ':item') }}`.replace(':item', itemId);
-            const response = await fetch(url, { method: 'PATCH', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' }, body: JSON.stringify({ mark_done: true }) });
+            const response = await fetch(url, {
+                method: 'PATCH',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ mark_done: isChecked })
+            });
             const data = await response.json();
-            if (data.success) { showToast('✅ Dicentang!', 'success'); setTimeout(() => location.reload(), 500); }
-            else { showToast('Gagal', 'error'); }
-        } catch(e) { showToast('Gagal', 'error'); }
+            if (response.ok && data.success) {
+                showToast(isChecked ? '✅ Dicentang selesai' : 'Dibatalkan', 'success');
+                setTimeout(() => location.reload(), 300);
+            } else {
+                showToast(data.message || 'Gagal mengubah status', 'error');
+            }
+        } catch(e) {
+            showToast('Gagal koneksi', 'error');
+        }
+    }
+
+    async function checkAllItems() {
+        const checkboxes = document.querySelectorAll('input[id^="check_"]:not(:checked)');
+        if (checkboxes.length === 0) {
+            showToast('Semua item sudah dicentang!', 'info');
+            return;
+        }
+        showToast('Menyimpan semua checklist...', 'info');
+        for (const cb of checkboxes) {
+            const itemId = cb.id.replace('check_', '');
+            const url = `{{ route('housekeeping.my-tasks.checklist.update', ':item') }}`.replace(':item', itemId);
+            await fetch(url, {
+                method: 'PATCH',
+                headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ mark_done: true })
+            });
+        }
+        showToast('✅ Semua checklist selesai dicentang!', 'success');
+        setTimeout(() => location.reload(), 400);
+    }
+
+    async function quickCheck(itemId) {
+        return toggleItemCheck(itemId, true);
     }
 
     async function completeTask(force = false) {
@@ -500,9 +534,9 @@
 
         try {
             const url = '{{ route('housekeeping.my-tasks.photos.store', $task) }}';
-            const response = await fetch(url, { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' }, body: formData });
+            const response = await fetch(url, { method: 'POST', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }, body: formData });
             const data = await response.json();
-            if (data.success) { showToast('Foto ' + type + ' berhasil diupload!', 'success'); setTimeout(() => location.reload(), 600); }
+            if (response.ok && data.success) { showToast('Foto ' + type + ' berhasil diupload!', 'success'); setTimeout(() => location.reload(), 600); }
             else { showToast(data.message || 'Gagal upload', 'error'); }
         } catch(e) { showToast('Gagal upload foto', 'error'); }
         input.value = '';
@@ -512,9 +546,9 @@
         if (!confirm('Hapus foto ini?')) return;
         try {
             const url = '{{ route('housekeeping.my-tasks.photos.destroy', ':id') }}'.replace(':id', photoId);
-            const response = await fetch(url, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}' } });
+            const response = await fetch(url, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' } });
             const data = await response.json();
-            if (data.success) { showToast('Foto dihapus', 'success'); setTimeout(() => location.reload(), 600); }
+            if (response.ok && data.success) { showToast('Foto dihapus', 'success'); setTimeout(() => location.reload(), 600); }
             else { showToast(data.message || 'Gagal', 'error'); }
         } catch(e) { showToast('Gagal hapus foto', 'error'); }
     }

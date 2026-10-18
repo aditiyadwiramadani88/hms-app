@@ -145,15 +145,34 @@
                                         @else
                                             @php
                                                 $nightlyRate = $booking->room?->roomType?->base_price ?? 0;
+                                                $distinctPrices = collect();
+                                                $distinctRoomsCount = 0;
+                                                $nightRooms = collect();
+
                                                 if ($booking->pricing_breakdown && is_array($booking->pricing_breakdown)) {
-                                                    $firstNight = collect($booking->pricing_breakdown)->first(fn($d) => is_array($d) && isset($d['price']));
+                                                    $nightlyEntries = collect($booking->pricing_breakdown)->filter(fn($d) => is_array($d) && isset($d['price']));
+                                                    $distinctPrices = $nightlyEntries->pluck('price')->map(fn($p) => round((float)$p))->unique();
+                                                    $nightRoomIds = $nightlyEntries->pluck('room')->filter()->unique();
+                                                    if ($nightRoomIds->isNotEmpty()) {
+                                                        $nightRooms = \App\Models\Room::whereIn('id', $nightRoomIds)->pluck('room_number', 'id');
+                                                        $distinctRoomsCount = $nightRooms->count();
+                                                    }
+                                                    $firstNight = $nightlyEntries->first();
                                                     if ($firstNight) $nightlyRate = $firstNight['price'];
                                                 } elseif ($booking->base_price && $booking->check_in && $booking->check_out) {
-                                                    $nights = $booking->check_in->diffInDays($booking->check_out);
+                                                    $nights = $booking->total_nights;
                                                     if ($nights > 0) $nightlyRate = $booking->base_price / $nights;
                                                 }
                                             @endphp
-                                            Rp {{ number_format($nightlyRate, 0, ',', '.') }} / night
+                                            @if($distinctRoomsCount > 1 || $distinctPrices->count() > 1)
+                                                @php
+                                                    $currentRoomRate = $nightlyEntries->last()['price'] ?? ($booking->room?->price_public ?? $nightlyRate);
+                                                @endphp
+                                                <span class="badge bg-warning-subtle text-warning me-1">Tarif Bervariasi / Pindah Kamar</span>
+                                                <span class="fs-12 text-muted">(Kamar {{ $booking->room?->room_number ?? '' }}: Rp {{ number_format($currentRoomRate, 0, ',', '.') }}/night)</span>
+                                            @else
+                                                Rp {{ number_format($nightlyRate, 0, ',', '.') }} / night
+                                            @endif
                                         @endif
                                     </td>
                                 </tr>
@@ -161,10 +180,10 @@
                                     <td>{{ $booking->stay_type === 'monthly' ? 'Duration' : 'Number of Nights' }}</td>
                                     <td class="text-end fw-medium">
                                         @if($booking->stay_type === 'monthly')
-                                            @php $totalNights = $booking->check_in->diffInDays($booking->check_out); @endphp
+                                            @php $totalNights = $booking->total_nights; @endphp
                                             {{ (int) round($totalNights / 30) }} Bulan ({{ $totalNights }} Malam)
                                         @else
-                                            {{ $booking->check_in->diffInDays($booking->check_out) }}
+                                            {{ $booking->total_nights }}
                                         @endif
                                     </td>
                                 </tr>
@@ -175,7 +194,7 @@
                                     {{-- Monthly: Summary only, no per-night table --}}
                                     @php
                                         $periods = $booking->pricing_breakdown['periods'] ?? null;
-                                        $totalNights = $booking->check_in->diffInDays($booking->check_out);
+                                        $totalNights = $booking->total_nights;
                                         $totalMonths = max(1, (int) round($totalNights / 30));
                                         $nightlyEntries = collect($booking->pricing_breakdown)->filter(fn($item) => is_array($item) && (isset($item['date']) || isset($item['night'])));
                                     @endphp
@@ -227,14 +246,25 @@
                                                     <table class="table table-sm table-borderless mb-0">
                                                         <tbody>
                                                             @if(is_array($booking->pricing_breakdown))
-                                                            @foreach($booking->pricing_breakdown as $key => $day)
+                                                            @php
+                                                                $sortedDays = collect($booking->pricing_breakdown)
+                                                                    ->filter(fn($day) => is_array($day) && (isset($day['date']) || isset($day['night'])))
+                                                                    ->sortBy(fn($day) => $day['date'] ?? $day['night'] ?? 0);
+                                                            @endphp
+                                                            @foreach($sortedDays as $key => $day)
                                                             @if(is_array($day) && (isset($day['date']) || isset($day['night'])))
+                                                            @php
+                                                                $dayRoomNum = isset($day['room']) ? ($nightRooms[$day['room']] ?? null) : null;
+                                                            @endphp
                                                             <tr class="fs-12">
                                                                 <td class="text-muted">
                                                                     @if(isset($day['date']))
                                                                         {{ \Carbon\Carbon::parse($day['date'])->format('d M Y') }} ({{ $day['day_of_week'] ?? '' }})
                                                                     @else
                                                                         Malam {{ $day['night'] }}
+                                                                    @endif
+                                                                    @if($dayRoomNum)
+                                                                        <span class="badge bg-secondary-subtle text-secondary ms-1">Kamar {{ $dayRoomNum }}</span>
                                                                     @endif
                                                                 </td>
                                                                 <td class="text-end text-muted">Rp {{ number_format($day['price'] ?? 0, 0, ',', '.') }}</td>
@@ -249,9 +279,17 @@
                                             <div class="ps-3 fs-13 text-muted mb-2 summary-text">
                                                 @php
                                                     $breakdown = is_array($booking->pricing_breakdown) ? collect($booking->pricing_breakdown)->filter(fn($item) => is_array($item) && (isset($item['date']) || isset($item['night']))) : collect();
-                                                    $periods = $booking->pricing_breakdown["periods"] ?? null;
+                                                    $rawPeriods = $booking->pricing_breakdown["periods"] ?? null;
+                                                    $periods = null;
+                                                    if ($rawPeriods && is_array($rawPeriods)) {
+                                                        // Avoid displaying duplicate or conflicting identical period spans
+                                                        $uniqueSpans = collect($rawPeriods)->unique(fn($p) => ($p['start'] ?? '') . '-' . ($p['end'] ?? ''));
+                                                        if ($uniqueSpans->count() > 1 && $uniqueSpans->sum(fn($p) => (int)($p['nights'] ?? 0)) == $booking->total_nights) {
+                                                            $periods = $uniqueSpans;
+                                                        }
+                                                    }
                                                 @endphp
-                                                @if($periods && is_array($periods) && count($periods) > 1)
+                                                @if($periods && $periods->count() > 1)
                                                     @foreach($periods as $idx => $p)
                                                     <div class="mb-1">
                                                         @if(isset($p["label"]))
@@ -262,7 +300,7 @@
                                                         {{ \Carbon\Carbon::parse($p["start"])->format("d M Y") }}
                                                         <span class="mx-1">...</span>
                                                         {{ \Carbon\Carbon::parse($p["end"])->format("d M Y") }}
-                                                        <span class="badge bg-info-subtle text-info ms-1">{{ $p["nights"] }} Nights</span>
+                                                        <span class="badge bg-info-subtle text-info ms-1">{{ (int) round((float) ($p["nights"] ?? 0)) }} Nights</span>
                                                     </div>
                                                     @endforeach
                                                 @else
@@ -285,15 +323,23 @@
                                     @endif
                                 @endif
 
+                                @php
+                                    $breakdownNightlySum = is_array($booking->pricing_breakdown)
+                                        ? collect($booking->pricing_breakdown)->filter(fn($d) => is_array($d) && isset($d['price']))->sum('price')
+                                        : 0;
+                                    $displayRoomSubtotal = ($breakdownNightlySum > 0 && $booking->stay_type !== 'monthly')
+                                        ? $breakdownNightlySum
+                                        : (float) $booking->base_price;
+                                @endphp
                                 <tr class="border-top border-top-dashed">
                                     <td>Room Subtotal</td>
-                                    <td class="text-end fw-medium">Rp {{ number_format($booking->base_price, 0, ',', '.') }}</td>
+                                    <td class="text-end fw-medium">Rp {{ number_format($displayRoomSubtotal, 0, ',', '.') }}</td>
                                 </tr>
 
                                 @if($booking->include_breakfast)
                                 @php
                                     $breakfastTotal = $booking->pricing_breakdown['breakfast_total'] ?? 0;
-                                    $nights = $booking->check_in->diffInDays($booking->check_out);
+                                    $nights = $booking->total_nights;
                                     $breakfastPerNight = $nights > 0 ? $breakfastTotal / $nights : $breakfastTotal;
                                 @endphp
                                 <tr>
@@ -612,7 +658,7 @@
                                                         <label class="form-label text-muted text-uppercase fw-semibold fs-11">Amount</label>
                                                         <div class="input-group">
                                                             <span class="input-group-text">Rp</span>
-                                                            <input type="number" class="form-control" name="amount" value="{{ (int)$transaction->amount }}" required>
+                                                            <input type="text" inputmode="numeric" class="form-control rupiah-input" name="amount" value="{{ number_format((int)$transaction->amount, 0, ',', '.') }}" required>
                                                         </div>
                                                     </div>
                                                     <div class="mb-3">
@@ -982,7 +1028,7 @@
                                         <label class="form-label fs-11 text-uppercase fw-semibold">Nominal Refund:</label>
                                         <div class="input-group input-group-sm mb-2">
                                             <span class="input-group-text">Rp</span>
-                                            <input type="number" class="form-control" name="manual_refund_amount" id="manual_refund_amount" value="{{ max(0, round($refundPreview)) }}" min="0" step="1" oninput="checkRefundDiff()">
+                                            <input type="text" inputmode="numeric" class="form-control rupiah-input" name="manual_refund_amount" id="manual_refund_amount" value="{{ number_format(max(0, round($refundPreview)), 0, ',', '.') }}" oninput="checkRefundDiff()">
                                         </div>
                                         <small class="text-muted" id="refund_diff_notice" style="display: none;">
                                             <i class="ri-error-warning-line me-1 text-warning"></i> Nominal berbeda dari estimasi sistem.
@@ -1003,7 +1049,7 @@
                                         const input = document.getElementById('manual_refund_amount');
                                         const notice = document.getElementById('refund_diff_notice');
                                         const estimasi = {{ round($refundPreview) }};
-                                        const val = parseFloat(input.value) || 0;
+                                        const val = window.parseRupiah ? window.parseRupiah(input.value) : (parseFloat(input.value.replace(/[^0-9]/g, '')) || 0);
                                         notice.style.display = (val !== estimasi) ? 'block' : 'none';
                                     }
 
@@ -1022,7 +1068,7 @@
                                             area.style.display = 'block';
                                             select.setAttribute('required', 'required');
                                             amountDisplay.textContent = new Intl.NumberFormat('id-ID').format(totalRefund);
-                                            manualInput.value = Math.round(totalRefund);
+                                            manualInput.value = window.formatRupiah ? window.formatRupiah(Math.round(totalRefund)) : Math.round(totalRefund);
                                             checkRefundDiff();
                                         } else {
                                             area.style.display = 'none';
@@ -1082,30 +1128,11 @@
                             @endif
                             @endcan
 
-                            <div class="row g-2">
-                                @can('bookings.invoice')
-                                <div class="col-{{ $booking->status === 'checked_out' ? '12' : '6' }}">
-                                    <button type="button" class="btn btn-soft-info w-100" data-bs-toggle="modal" data-bs-target="#printInvoiceModal">
-                                        <i class="ri-printer-line align-bottom me-1"></i> Invoice
-                                    </button>
-                                </div>
-                                @endcan
-                                @can('bookings.send-wa')
-                                @if($booking->status !== 'checked_out' && $booking->status !== 'cancelled' && $booking->status !== 'no_show')
-                                <div class="col-6">
-                                    <form action="{{ route('bookings.send-wa', $booking->id) }}" method="POST" data-ajax="true" data-ajax-reload="true" data-ajax-close-modal="true" data-ajax-confirm="Are you sure?">
-                                        @csrf
-                                        <button type="submit" data-submit-protect="true" class="btn btn-soft-success w-100">WA</button>
-                                    </form>
-                                </div>
-                                @endif
-                                <div class="col-{{ $booking->status !== 'checked_out' && $booking->status !== 'cancelled' && $booking->status !== 'no_show' ? '6' : '12' }}">
-                                    <button type="button" class="btn btn-soft-warning w-100" onclick="copyWaTemplate()">
-                                        <i class="ri-clipboard-line me-1"></i> Copy WA
-                                    </button>
-                                </div>
-                                @endcan
-                            </div>
+                            @can('bookings.invoice')
+                            <button type="button" class="btn btn-soft-info w-100" data-bs-toggle="modal" data-bs-target="#printInvoiceModal">
+                                <i class="ri-printer-line align-bottom me-1"></i> Invoice
+                            </button>
+                            @endcan
 
                             @if($booking->status !== 'checked_out' && $booking->status !== 'cancelled' && $booking->status !== 'no_show')
                                 @can('bookings.edit.unlimited')
@@ -1380,14 +1407,14 @@
                                 <label class="form-label">Base Amount (Net)</label>
                                 <div class="input-group">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="number" class="form-control" name="amount" value="0" id="custom_base_amount">
+                                    <input type="text" inputmode="numeric" class="form-control rupiah-input" name="amount" value="0" id="custom_base_amount">
                                 </div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Tax Amount (Opsional)</label>
                                 <div class="input-group">
                                     <span class="input-group-text">Rp</span>
-                                    <input type="number" class="form-control" name="tax_amount" value="0" id="custom_tax_amount">
+                                    <input type="text" inputmode="numeric" class="form-control rupiah-input" name="tax_amount" value="0" id="custom_tax_amount">
                                 </div>
                             </div>
                         </div>
@@ -1427,7 +1454,7 @@
                             <label class="form-label text-muted text-uppercase fw-semibold fs-11">Manual Discount (Rp)</label>
                             <div class="input-group">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control" name="discount_amount" value="{{ $booking->discount_amount }}">
+                                <input type="text" inputmode="numeric" class="form-control rupiah-input" name="discount_amount" value="{{ number_format((int)$booking->discount_amount, 0, ',', '.') }}">
                             </div>
                         </div>
                         <div class="mb-0">
@@ -1494,20 +1521,25 @@
                             <label class="form-label text-muted text-uppercase fw-semibold fs-11">Amount to Record (Nominal Masuk Kas)</label>
                             <div class="input-group">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control" name="amount" id="amount_to_pay" value="{{ (int)$remainingBalance }}" required>
+                                <input type="text" inputmode="numeric" class="form-control rupiah-input" name="amount" id="amount_to_pay" value="{{ number_format((int)$remainingBalance, 0, ',', '.') }}" required>
                             </div>
-                            <small class="text-muted">Sisa Tagihan: Rp {{ number_format($remainingBalance, 0, ',', '.') }}</small>
+                            <div class="d-flex justify-content-between align-items-center mt-1">
+                                <small class="text-muted">
+                                    Sisa Tagihan: <span id="sisa_tagihan_display" class="fw-bold text-success">Rp 0 (Lunas)</span>
+                                </small>
+                                <small class="text-muted fs-11">Total Tagihan: <span class="fw-semibold">Rp {{ number_format($remainingBalance, 0, ',', '.') }}</span></small>
+                            </div>
                         </div>
                         <div id="cash_calculator_section" class="p-3 bg-light rounded mb-3 border border-dashed">
                             <div class="d-flex align-items-center mb-2">
                                 <label class="form-label fs-12 text-muted text-uppercase mb-0 flex-grow-1">Customer Paid (Uang Diterima)</label>
-                                <button type="button" class="btn btn-link btn-sm p-0 fs-11 text-decoration-none" onclick="document.getElementById('amount_to_pay').value = document.getElementById('customer_paid').value; calculateChange();">
+                                <button type="button" class="btn btn-link btn-sm p-0 fs-11 text-decoration-none" onclick="document.getElementById('amount_to_pay').value = document.getElementById('customer_paid').value; calculateChange('amount');">
                                     Use as Record Amount
                                 </button>
                             </div>
                             <div class="input-group input-group-sm mb-2">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control" id="customer_paid" placeholder="Masukkan uang tamu...">
+                                <input type="text" inputmode="numeric" class="form-control rupiah-input" id="customer_paid" placeholder="Masukkan uang tamu...">
                             </div>
                             <div class="d-flex justify-content-between align-items-center">
                                 <span class="fs-13">Kembalian:</span>
@@ -1545,7 +1577,7 @@
                             <label class="form-label text-muted text-uppercase fw-semibold fs-11">Deposit Amount</label>
                             <div class="input-group">
                                 <span class="input-group-text">Rp</span>
-                                <input type="number" class="form-control" name="deposit_amount" value="{{ (int)$booking->deposit_amount }}" min="0" required>
+                                <input type="text" inputmode="numeric" class="form-control rupiah-input" name="deposit_amount" value="{{ number_format((int)$booking->deposit_amount, 0, ',', '.') }}" required>
                             </div>
                         </div>
                         <div class="alert alert-info fs-12 mb-0">
@@ -1886,7 +1918,16 @@
                                 <label class="form-label">Filter Tipe Kamar</label>
                                 <select class="form-select" id="transfer_filter_type" onchange="loadTransferRooms()">
                                     <option value="">All Types</option>
-                                    @foreach(\App\Models\RoomType::where('is_active', true)->get() as $type)
+                                    @php
+                                        $transferRoomTypes = \App\Models\RoomType::where('is_active', true)
+                                            ->when(in_array($booking->stay_type, ['monthly', 'yearly']), function($q) {
+                                                $q->whereHas('rooms', fn($r) => $r->where('is_kos', true));
+                                            }, function($q) {
+                                                $q->whereHas('rooms', fn($r) => $r->where('is_kos', false));
+                                            })
+                                            ->get();
+                                    @endphp
+                                    @foreach($transferRoomTypes as $type)
                                         <option value="{{ $type->id }}">{{ $type->name }}</option>
                                     @endforeach
                                 </select>
@@ -1895,9 +1936,27 @@
                                 <label class="form-label">Catatan (opsional)</label>
                                 <input type="text" class="form-control" name="notes" placeholder="Catatan tambahan...">
                             </div>
+                            @php
+                                $isOverdue = $booking->check_out->copy()->startOfDay()->lte(now()->startOfDay());
+                                $suggestedCheckOut = '';
+                                if ($isOverdue) {
+                                    if (in_array($booking->stay_type, ['monthly', 'yearly'])) {
+                                        $cand = $booking->check_out->copy()->startOfDay()->addMonth();
+                                        $suggestedCheckOut = $cand->gt(now()) ? $cand->format('Y-m-d') : now()->addMonth()->format('Y-m-d');
+                                    } else {
+                                        $suggestedCheckOut = now()->addDay()->format('Y-m-d');
+                                    }
+                                }
+                            @endphp
                             <div class="col-md-3">
-                                <label class="form-label">Perpanjang Check-out (opsional)</label>
-                                <input type="date" class="form-control" name="new_check_out" id="transfer_new_checkout" min="{{ date('Y-m-d', strtotime('+1 day')) }}" placeholder="Biarkan kosong jika tidak berubah">
+                                <label class="form-label">Perpanjang Check-out <span class="text-muted fs-11">({{ $isOverdue ? 'disesuaikan' : 'opsional' }})</span></label>
+                                <input type="date" class="form-control" name="new_check_out" id="transfer_new_checkout" 
+                                    min="{{ date('Y-m-d', strtotime('+1 day')) }}" 
+                                    value="{{ $suggestedCheckOut }}"
+                                    placeholder="Biarkan kosong jika tidak berubah">
+                                @if($isOverdue)
+                                    <small class="text-warning d-block mt-1"><i class="ri-information-line"></i> Check-out lama telah lewat, otomatis disesuaikan.</small>
+                                @endif
                             </div>
                         </div>
 
@@ -1914,21 +1973,31 @@
                                 <div class="col-md-6">
                                     <table class="table table-sm table-borderless mb-0">
                                         <tr><td class="text-muted">Kamar Lama:</td><td class="fw-medium" id="tp_old_room">-</td></tr>
-                                        <tr><td class="text-muted">Harga/malam:</td><td id="tp_old_price">-</td></tr>
-                                        <tr><td class="text-muted">Malam terpakai:</td><td id="tp_nights_used">-</td></tr>
+                                        <tr><td class="text-muted">{{ in_array($booking->stay_type, ['monthly', 'yearly']) ? 'Tarif prorata/hari:' : 'Harga/malam:' }}</td><td id="tp_old_price">-</td></tr>
+                                        <tr><td class="text-muted">{{ in_array($booking->stay_type, ['monthly', 'yearly']) ? 'Hari terpakai:' : 'Malam terpakai:' }}</td><td id="tp_nights_used">-</td></tr>
                                         <tr><td class="text-muted">Subtotal lama:</td><td id="tp_cost_old">-</td></tr>
                                     </table>
                                 </div>
                                 <div class="col-md-6">
                                     <table class="table table-sm table-borderless mb-0">
                                         <tr><td class="text-muted">Kamar Baru:</td><td class="fw-medium" id="tp_new_room">-</td></tr>
-                                        <tr><td class="text-muted">Harga/malam:</td><td id="tp_new_price">-</td></tr>
-                                        <tr><td class="text-muted">Sisa malam:</td><td id="tp_remaining">-</td></tr>
+                                        <tr><td class="text-muted">{{ in_array($booking->stay_type, ['monthly', 'yearly']) ? 'Tarif prorata/hari:' : 'Harga/malam:' }}</td><td id="tp_new_price">-</td></tr>
+                                        <tr><td class="text-muted">{{ in_array($booking->stay_type, ['monthly', 'yearly']) ? 'Sisa hari:' : 'Sisa malam:' }}</td><td id="tp_remaining">-</td></tr>
                                         <tr><td class="text-muted">Subtotal baru:</td><td id="tp_cost_new">-</td></tr>
                                     </table>
                                 </div>
                             </div>
                             <hr>
+                            @if($booking->include_breakfast)
+                            <div class="d-flex justify-content-between text-muted fs-12 mb-1" id="tp_breakfast_row" style="display: none;">
+                                <span>Sarapan (Total):</span><span id="tp_breakfast_total" class="fw-medium">-</span>
+                            </div>
+                            @endif
+                            @if(!$booking->tax_exempt && (float)$booking->tax_amount > 0)
+                            <div class="d-flex justify-content-between text-muted fs-12 mb-1" id="tp_tax_row" style="display: none;">
+                                <span>Pajak (Tax):</span><span id="tp_tax_total" class="fw-medium">-</span>
+                            </div>
+                            @endif
                             <div class="d-flex justify-content-between">
                                 <span>Total Lama:</span><span id="tp_old_total" class="fw-medium">-</span>
                             </div>
@@ -2061,7 +2130,7 @@
                 $totalPaidWa = $booking->transactions->where('type', 'payment')->where('status', 'success')->sum('amount');
                 $balanceWa = $totalChargesWa - $totalPaidWa;
                 $hotelNameWa = $booking->hotel->name ?? 'Our Homestay';
-                $nightsWa = $booking->check_in->diffInDays($booking->check_out);
+                $nightsWa = $booking->total_nights;
             @endphp
             var text = "*INVOICE - {!! addslashes($hotelNameWa) !!}*\n";
             text += "------------------------------------------\n";
@@ -2073,7 +2142,7 @@
             text += "Check-in: {{ $booking->check_in->format('d M Y') }}\n";
             text += "Check-out: {{ $booking->check_out->format('d M Y') }}\n\n";
             text += "*Billing Details:*\n";
-            text += "- Room ({{ $nightsWa }} malam): Rp {{ number_format($booking->base_price, 0, ',', '.') }}\n";
+            text += "- Room ({{ $nightsWa }} malam): Rp {{ number_format($displayRoomSubtotal ?? $booking->base_price, 0, ',', '.') }}\n";
             @if($booking->include_breakfast && ($booking->pricing_breakdown['breakfast_total'] ?? 0) > 0)
             text += "- Breakfast ({{ $nightsWa }} malam): Rp {{ number_format($booking->pricing_breakdown['breakfast_total'], 0, ',', '.') }}\n";
             @endif
@@ -2131,27 +2200,45 @@
             const accountSelect = document.getElementById('payment_account');
             const cashSection = document.getElementById('cash_calculator_section');
 
-            function calculateChange() {
+            function calculateChange(source) {
                 const toPayInput = document.getElementById('amount_to_pay');
                 const paidInput = document.getElementById('customer_paid');
                 const changeDisplay = document.getElementById('change_amount');
+                const sisaDisplay = document.getElementById('sisa_tagihan_display');
                 const remaining = {{ (int)$remainingBalance }};
 
-                const paid = parseFloat(paidInput.value) || 0;
+                const paid = window.parseRupiah ? window.parseRupiah(paidInput ? paidInput.value : '') : 0;
 
-                // Jika bayar kurang dari sisa (cicilan), update nominal kas
-                if (paid > 0 && paid <= remaining) {
-                    toPayInput.value = paid;
-                }
-                // Jika bayar lebih (lunas + kembalian), nominal kas = sisa tagihan
-                else if (paid > remaining) {
-                    toPayInput.value = remaining;
+                // Jika update berasal dari customer_paid:
+                if (source === 'paid') {
+                    if (paid > 0 && paid <= remaining) {
+                        toPayInput.value = window.formatRupiah ? window.formatRupiah(paid) : paid;
+                    } else if (paid > remaining) {
+                        toPayInput.value = window.formatRupiah ? window.formatRupiah(remaining) : remaining;
+                    }
                 }
 
-                const toPay = parseFloat(toPayInput.value) || 0;
+                const toPay = window.parseRupiah ? window.parseRupiah(toPayInput ? toPayInput.value : '') : 0;
                 const change = Math.max(0, paid - toPay);
-                changeDisplay.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(change);
+                if (changeDisplay) {
+                    changeDisplay.textContent = 'Rp ' + (window.formatRupiah ? window.formatRupiah(change) : new Intl.NumberFormat('id-ID').format(change));
+                }
+
+                // Hitung sisa tagihan secara dinamis setelah pembayaran ini
+                if (sisaDisplay) {
+                    const sisaSetelahBayar = Math.max(0, remaining - toPay);
+                    if (sisaSetelahBayar === 0) {
+                        sisaDisplay.textContent = 'Rp 0 (Lunas)';
+                        sisaDisplay.className = 'fw-bold text-success';
+                    } else {
+                        const formattedSisa = window.formatRupiah ? window.formatRupiah(sisaSetelahBayar) : new Intl.NumberFormat('id-ID').format(sisaSetelahBayar);
+                        sisaDisplay.textContent = 'Rp ' + formattedSisa;
+                        sisaDisplay.className = 'fw-bold text-danger';
+                    }
+                }
             }
+
+            window.calculateChange = calculateChange;
 
             function toggleCashCalculator() {
                 if(!accountSelect) return;
@@ -2159,12 +2246,28 @@
                 cashSection.style.display = isCash ? 'block' : 'none';
             }
 
-            if(amountInput) amountInput.addEventListener('input', calculateChange);
-            if(paidInput) paidInput.addEventListener('input', calculateChange);
+            if(amountInput) {
+                amountInput.addEventListener('input', function() {
+                    calculateChange('amount');
+                });
+            }
+            if(paidInput) {
+                paidInput.addEventListener('input', function() {
+                    calculateChange('paid');
+                });
+            }
             if(accountSelect) {
                 accountSelect.addEventListener('change', toggleCashCalculator);
                 toggleCashCalculator();
             }
+
+            const addPaymentModalEl = document.getElementById('addPaymentModal');
+            if (addPaymentModalEl) {
+                addPaymentModalEl.addEventListener('shown.bs.modal', function() {
+                    calculateChange();
+                });
+            }
+            calculateChange();
 
             // Custom Charge Calculation
             const customBase = document.getElementById('custom_base_amount');
@@ -2172,10 +2275,10 @@
             const customTotalDisplay = document.getElementById('custom_total_display');
 
             function calculateCustomTotal() {
-                const b = parseFloat(customBase.value) || 0;
-                const t = parseFloat(customTax.value) || 0;
+                const b = window.parseRupiah ? window.parseRupiah(customBase.value) : (parseFloat(customBase.value) || 0);
+                const t = window.parseRupiah ? window.parseRupiah(customTax.value) : (parseFloat(customTax.value) || 0);
                 const total = b + t;
-                customTotalDisplay.textContent = 'Rp ' + new Intl.NumberFormat('id-ID').format(total);
+                customTotalDisplay.textContent = 'Rp ' + (window.formatRupiah ? window.formatRupiah(total) : new Intl.NumberFormat('id-ID').format(total));
             }
 
             if(customBase) customBase.addEventListener('input', calculateCustomTotal);
@@ -2243,21 +2346,98 @@
                 check_out: '{{ $booking->check_out->format("Y-m-d") }}',
                 room_type_id: typeId,
                 guest_id: '{{ $booking->guest_id }}',
-                stay_type: 'daily'
+                stay_type: '{{ $booking->stay_type ?? "daily" }}'
             });
             fetch(`{{ route('bookings.available-rooms') }}?${params.toString()}`).then(r => r.json()).then(rooms => {
                 const container = document.getElementById('transfer_room_list');
                 container.innerHTML = '';
-                rooms.forEach(room => {
-                    if (room.id === {{ $booking->room_id ?? 0 }}) return; // Skip current room
-                    const col = document.createElement('div');
-                    col.className = 'col-md-3';
-                    col.innerHTML = `
-                        <div class="card border shadow-none h-100">
-                            <div class="card-body p-3">
-                                <h6 class="fs-14 mb-1">Room ${room.room_number}</h6>
-                                <span class="badge bg-primary-subtle text-primary mb-2">${room.room_type}</span>
-                                <div class="d-grid gap-1">
+                // Kategori status untuk kelayakan pindah kamar
+                const occupiedStatuses = ['In-House', 'Checkin', 'Occupied'];
+                const dirtyStatuses = ['dirty', 'Dirty', 'Checkout', 'Room Refresh'];
+                const maintenanceStatuses = ['Maintenance', 'maintenance', 'Out of Order', 'out_of_order', 'Closed', 'closed'];
+
+                // Label status mengikuti pengaturan bahasa aktif user (EN/ID)
+                @php
+                    $roomTransferLabels = [
+                        'occupied' => __('translation.room_status_occupied'),
+                        'dirty' => __('translation.room_status_dirty'),
+                        'checkout' => __('translation.room_status_checkout'),
+                        'refresh' => __('translation.room_status_refresh'),
+                        'maintenance' => __('translation.room_status_maintenance'),
+                        'out_of_order' => __('translation.room_status_out_of_order'),
+                        'closed' => __('translation.room_status_closed'),
+                        'available' => __('translation.room_status_available'),
+                        'clean' => __('translation.room_status_clean'),
+                        'booked' => __('translation.room_status_booked'),
+                        'block_occupied' => __('translation.room_block_occupied'),
+                        'block_dirty' => __('translation.room_block_dirty'),
+                        'block_maintenance' => __('translation.room_block_maintenance'),
+                        'block_booked' => __('translation.room_block_booked'),
+                        'room_label' => __('translation.room_label'),
+                        'no_rooms' => __('translation.no_rooms_found'),
+                    ];
+                @endphp
+                const t = @json($roomTransferLabels);
+
+                const statusLabel = {
+                    'In-House': t.occupied, 'Checkin': t.occupied, 'Occupied': t.occupied,
+                    'dirty': t.dirty, 'Dirty': t.dirty, 'Checkout': t.checkout, 'Room Refresh': t.refresh,
+                    'Maintenance': t.maintenance, 'maintenance': t.maintenance, 'Out of Order': t.out_of_order,
+                    'out_of_order': t.out_of_order, 'Closed': t.closed, 'closed': t.closed,
+                    'Available': t.available, 'available': t.available, 'Clean': t.clean, 'clean': t.clean
+                };
+
+                const filteredRooms = rooms.filter(room => room.id !== {{ $booking->room_id ?? 0 }});
+                filteredRooms.forEach(room => {
+                    const isOccupied = occupiedStatuses.includes(room.status);
+                    const isDirty = dirtyStatuses.includes(room.status);
+                    const isMaintenance = maintenanceStatuses.includes(room.status);
+                    const hasConflict = !room.available && !isOccupied && !isDirty && !isMaintenance;
+                    const canTransfer = room.available === true && !isOccupied && !isDirty && !isMaintenance;
+
+                    const label = statusLabel[room.status] || room.status || t.available;
+
+                    // Tentukan badge status dan alasan blokir
+                    let statusBadge = '';
+                    let blockReason = '';
+                    if (isOccupied) {
+                        statusBadge = `<span class="badge bg-danger mb-1">${label}</span>`;
+                        blockReason = `<small class="text-danger d-block mt-1"><i class="ri-forbid-line"></i> ${t.block_occupied}</small>`;
+                    } else if (isDirty) {
+                        statusBadge = `<span class="badge bg-warning text-dark mb-1">${label}</span>`;
+                        blockReason = `<small class="text-warning d-block mt-1"><i class="ri-brush-line"></i> ${t.block_dirty}</small>`;
+                    } else if (isMaintenance) {
+                        statusBadge = `<span class="badge bg-dark mb-1">${label}</span>`;
+                        blockReason = `<small class="text-muted d-block mt-1"><i class="ri-tools-line"></i> ${t.block_maintenance}</small>`;
+                    } else if (hasConflict) {
+                        statusBadge = `<span class="badge bg-info mb-1">${t.booked}</span>`;
+                        blockReason = `<small class="text-info d-block mt-1"><i class="ri-calendar-event-line"></i> ${t.block_booked}</small>`;
+                    } else {
+                        statusBadge = `<span class="badge bg-success mb-1">${label}</span>`;
+                    }
+
+                    const cardOpacity = canTransfer ? '' : 'opacity-50';
+
+                    let actionButtons = '';
+                    if (canTransfer) {
+                        if ('{{ $booking->stay_type }}' === 'yearly') {
+                            const yp = (room.yearly_price || room.price_kos || 0);
+                            actionButtons = `
+                                <div class="d-grid gap-1 mt-1">
+                                    <button type="button" class="btn btn-sm btn-soft-success" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${yp}, 'public')">
+                                        Pilih (Tahunan): ${formatRp(yp)} / thn
+                                    </button>
+                                </div>`;
+                        } else if ('{{ $booking->stay_type }}' === 'monthly') {
+                            actionButtons = `
+                                <div class="d-grid gap-1 mt-1">
+                                    <button type="button" class="btn btn-sm btn-soft-success" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_kos}, 'public')">
+                                        Pilih (Kos): ${formatRp(room.price_kos)}
+                                    </button>
+                                </div>`;
+                        } else {
+                            actionButtons = `
+                                <div class="d-grid gap-1 mt-1">
                                     <button type="button" class="btn btn-sm btn-soft-primary" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_public}, 'public')">
                                         Umum: ${formatRp(room.price_public)}
                                     </button>
@@ -2267,23 +2447,44 @@
                                     <button type="button" class="btn btn-sm btn-soft-danger" onclick="selectTransferRoom(${room.id}, '${room.room_number}', '${room.room_type}', ${room.price_high_season}, 'high_season')">
                                         High Season: ${formatRp(room.price_high_season)}
                                     </button>
-                                </div>
+                                </div>`;
+                        }
+                    } else {
+                        actionButtons = blockReason;
+                    }
+
+                    const col = document.createElement('div');
+                    col.className = 'col-md-3';
+                    col.innerHTML = `
+                        <div class="card border shadow-none h-100 ${cardOpacity}">
+                            <div class="card-body p-3">
+                                <h6 class="fs-14 mb-1">${t.room_label} ${room.room_number}</h6>
+                                <span class="badge bg-primary-subtle text-primary mb-1">${room.room_type}</span>
+                                ${statusBadge}
+                                ${actionButtons}
                             </div>
                         </div>`;
                     container.appendChild(col);
                 });
-                if (rooms.filter(r => r.id !== {{ $booking->room_id ?? 0 }}).length === 0) {
-                    container.innerHTML = '<div class="col-12 text-center text-muted py-3">Tidak ada kamar tersedia.</div>';
+                if (filteredRooms.length === 0) {
+                    container.innerHTML = `<div class="col-12 text-center text-muted py-3"><i class="ri-home-line fs-20 d-block mb-1"></i>${t.no_rooms}</div>`;
                 }
             });
         }
 
+        let currentSelectedTransferRoom = null;
         function selectTransferRoom(roomId, roomNum, roomType, price, tier) {
+            currentSelectedTransferRoom = { roomId, roomNum, roomType, price, tier };
             document.getElementById('transfer_room_id').value = roomId;
             document.getElementById('transfer_tier').value = tier;
 
             // Fetch preview
             const params = new URLSearchParams({ room_id: roomId, tier: tier });
+            const newCheckOut = document.getElementById('transfer_new_checkout').value;
+            if (newCheckOut) {
+                params.append('new_check_out', newCheckOut);
+            }
+
             fetch(`{{ route('bookings.transfer.preview', $booking->id) }}?${params.toString()}`).then(r => r.json()).then(res => {
                 if (!res.success) {
                     alert(res.message);
@@ -2301,6 +2502,24 @@
                 document.getElementById('tp_old_total').textContent = formatRp(d.old_total);
                 document.getElementById('tp_new_total').textContent = formatRp(d.new_total);
 
+                if (document.getElementById('tp_breakfast_total')) {
+                    if (d.breakfast_total > 0) {
+                        document.getElementById('tp_breakfast_total').textContent = formatRp(d.breakfast_total);
+                        document.getElementById('tp_breakfast_row').style.display = 'flex';
+                    } else {
+                        document.getElementById('tp_breakfast_row').style.display = 'none';
+                    }
+                }
+
+                if (document.getElementById('tp_tax_total')) {
+                    if (d.tax_amount > 0) {
+                        document.getElementById('tp_tax_total').textContent = formatRp(d.tax_amount);
+                        document.getElementById('tp_tax_row').style.display = 'flex';
+                    } else {
+                        document.getElementById('tp_tax_row').style.display = 'none';
+                    }
+                }
+
                 const diffEl = document.getElementById('tp_difference');
                 const chargeOption = document.getElementById('transfer_charge_option');
                 const chargeDesc = document.getElementById('transfer_charge_desc');
@@ -2310,8 +2529,14 @@
                     diffEl.textContent = '+' + formatRp(d.price_difference);
                     diffEl.className = 'fw-bold text-danger';
                     chargeOption.style.display = 'block';
-                    chargeDesc.textContent = 'Kamar baru lebih mahal. Pilih tindakan untuk selisih harga:';
+                    chargeDesc.textContent = 'Kamar baru / durasi perpanjangan memiliki total lebih tinggi. Pilih tindakan:';
                     chargeAmount.textContent = '(' + formatRp(d.price_difference) + ')';
+
+                    const reason = document.getElementById('transfer_reason').value;
+                    if (reason === 'Upgrade' || reason === 'Request Tamu' || !reason) {
+                        const yesRadio = document.getElementById('charge_diff_yes');
+                        if (yesRadio) yesRadio.checked = true;
+                    }
                 } else if (d.price_difference < 0) {
                     diffEl.textContent = '-' + formatRp(Math.abs(d.price_difference));
                     diffEl.className = 'fw-bold text-success';
@@ -2322,10 +2547,33 @@
                     chargeOption.style.display = 'none';
                 }
 
+                if (d.new_checkout_date && !document.getElementById('transfer_new_checkout').value) {
+                    document.getElementById('transfer_new_checkout').value = d.new_checkout_date;
+                }
+
                 document.getElementById('transfer_preview').style.display = 'block';
                 document.getElementById('btnConfirmTransfer').disabled = false;
             });
         }
+
+        document.getElementById('transfer_reason').addEventListener('change', function() {
+            if (this.value === 'Upgrade') {
+                const yesRadio = document.getElementById('charge_diff_yes');
+                if (yesRadio) yesRadio.checked = true;
+            }
+        });
+
+        document.getElementById('transfer_new_checkout').addEventListener('change', function() {
+            if (currentSelectedTransferRoom) {
+                selectTransferRoom(
+                    currentSelectedTransferRoom.roomId,
+                    currentSelectedTransferRoom.roomNum,
+                    currentSelectedTransferRoom.roomType,
+                    currentSelectedTransferRoom.price,
+                    currentSelectedTransferRoom.tier
+                );
+            }
+        });
 
         // Load rooms when modal opens
         document.getElementById('roomTransferModal').addEventListener('show.bs.modal', function() {
@@ -2424,13 +2672,13 @@
                 return;
             }
             const a = data.data;
-            const severityBadge = { critical: 'danger', high: 'warning', medium: 'info', info: 'secondary' };
+            const rateUnit = a.stay_type === 'monthly' ? '/bulan' : '/malam';
 
             if (a.anomalies.length === 0) {
                 let html = '<div class="text-center text-success py-3">';
                 html += '<i class="ri-checkbox-circle-fill fs-3 d-block mb-1"></i>';
                 html += '<span class="fw-semibold">No anomaly detected. Pricing is correct.</span></div>';
-                html += '<div class="mt-2 fs-12 text-muted">Room: ' + (a.room_number || 'N/A') + ' | Rate: Rp ' + new Intl.NumberFormat('id-ID').format(a.room_rate) + '/bulan | ' + a.nights + ' malam (' + a.stay_type + ')</div>';
+                html += '<div class="mt-2 fs-12 text-muted">Room: ' + (a.room_number || 'N/A') + ' | Rate: Rp ' + new Intl.NumberFormat('id-ID').format(a.room_rate) + rateUnit + ' | ' + a.nights + ' malam (' + a.stay_type + ')</div>';
                 resultDiv.innerHTML = html;
                 return;
             }
@@ -2460,9 +2708,9 @@
             });
 
             html += '</tbody></table></div>';
-            html += '<div class="mt-3 fs-12 text-muted"><i class="ri-information-line me-1"></i>Room: ' + (a.room_number || 'N/A') + ' | Rate: Rp ' + new Intl.NumberFormat('id-ID').format(a.room_rate) + '/bulan | ' + a.nights + ' malam (' + a.stay_type + ')</div>';
+            html += '<div class="mt-3 fs-12 text-muted"><i class="ri-information-line me-1"></i>Room: ' + (a.room_number || 'N/A') + ' | Rate: Rp ' + new Intl.NumberFormat('id-ID').format(a.room_rate) + rateUnit + ' | ' + a.nights + ' malam (' + a.stay_type + ')</div>';
             resultDiv.innerHTML = html;
-            applyBtn.style.display = 'inline-block';
+            applyBtn.style.display = a.has_critical ? 'inline-block' : 'none';
         })
         .catch(err => {
             resultDiv.innerHTML = '<div class="alert alert-danger">Error: ' + err.message + '</div>';

@@ -22,30 +22,42 @@
     <div class="header">
         <h1>{{ $hotel->name ?? 'SIMPANG HOMESTAY & KOZZ' }}</h1>
         <h2>LAPORAN TUGAS HOUSEKEEPING</h2>
-        <div class="date">Periode: {{ $monthObj->translatedFormat('F Y') }}</div>
+        <div class="date">Periode: {{ $periodLabel ?? $monthObj->translatedFormat('F Y') }}</div>
     </div>
 
-    {{-- Summary --}}
-    @if(count($reportData['summary']) > 0)
-    <div class="section-title">REKAP PER STAFF ({{ $reportData['total_tasks'] }} tugas)</div>
+    {{-- TABLE 1: Rekap Per Staff (Summary) --}}
+    @if(!empty($reportData['summary']) && count($reportData['summary']) > 0)
+    <div class="section-title">1. REKAP PER STAFF (TOTAL {{ $reportData['total_tasks'] }} KAMAR)</div>
     <table>
         <thead>
             <tr>
                 <th style="width: 30px;">NO</th>
                 <th>NAMA STAFF</th>
                 <th style="width: 80px;">JUMLAH TUGAS</th>
-                <th>PER KATEGORI BONUS (PK/Sales/Umum/Online/Kost)</th>
+                <th>PER SUMBER BOOKING</th>
+                <th>PER JENIS KAMAR</th>
+                <th>PER KATEGORI BONUS</th>
             </tr>
         </thead>
         <tbody>
             @foreach($reportData['summary'] as $i => $row)
             <tr>
                 <td class="text-center">{{ $i + 1 }}</td>
-                <td>{{ $row['nama'] }}</td>
-                <td class="text-center">{{ $row['jumlah'] }}</td>
+                <td><strong>{{ $row['nama'] }}</strong></td>
+                <td class="text-center"><strong>{{ $row['jumlah'] }} Kamar</strong></td>
+                <td>
+                    @foreach($row['by_source'] as $label => $count)
+                        <span>{{ $label }}: {{ $count }}; </span>
+                    @endforeach
+                </td>
+                <td>
+                    @foreach($row['by_room_type'] as $label => $count)
+                        <span>{{ $label }}: {{ $count }}; </span>
+                    @endforeach
+                </td>
                 <td>
                     @foreach($row['by_bonus_category'] as $label => $count)
-                        {{ $label }}: {{ $count }}@if(!$loop->last), @endif
+                        <span>{{ $label }}: {{ $count }}; </span>
                     @endforeach
                 </td>
             </tr>
@@ -54,20 +66,19 @@
     </table>
     @endif
 
-    {{-- Detail --}}
-    @if(count($reportData['details']) > 0)
-    <div class="section-title">DETAIL TUGAS</div>
+    {{-- TABLE 2: Detail Tugas --}}
+    <div class="section-title" style="margin-top: 20px;">2. DETAIL TUGAS YANG DIKERJAKAN</div>
+    @if(!empty($reportData['details']) && count($reportData['details']) > 0)
     <table>
         <thead>
             <tr>
                 <th style="width: 25px;">NO</th>
                 <th>TANGGAL</th>
                 <th>KAMAR</th>
-                <th>STAFF</th>
+                <th>NAMA TAMU</th>
                 <th>SUMBER BOOKING</th>
-                <th>KATEGORI</th>
-                <th>KATEGORI BONUS</th>
-                <th>VERIFIKASI</th>
+                <th>NAMA STAFF</th>
+                <th>STATUS VERIFIKASI KAMAR</th>
             </tr>
         </thead>
         <tbody>
@@ -75,16 +86,17 @@
             <tr>
                 <td class="text-center">{{ $i + 1 }}</td>
                 <td>{{ $d['tanggal'] }}</td>
-                <td>{{ $d['kamar'] }}</td>
+                <td><strong>{{ $d['kamar'] }}</strong></td>
+                <td>{{ $d['nama_tamu'] ?? '-' }}</td>
+                <td class="text-center">{{ $d['sumber'] }}</td>
                 <td>{{ $d['staff'] }}</td>
-                <td>{{ $d['sumber'] }}</td>
-                <td class="text-center">{{ $d['kategori'] }}</td>
-                <td class="text-center">{{ $d['kategori_bonus'] }}</td>
                 <td class="text-center">{{ $d['status_verifikasi'] }}</td>
             </tr>
             @endforeach
         </tbody>
     </table>
+    @else
+        <p style="text-align:center; padding: 20px; color:#666;">Tidak ada data tugas housekeeping di periode ini.</p>
     @endif
 
     <div class="footer">

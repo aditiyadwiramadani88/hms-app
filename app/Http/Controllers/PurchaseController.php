@@ -52,6 +52,8 @@ class PurchaseController extends Controller
             'items.*.inventory_id' => 'required|exists:inventories,id',
             'items.*.quantity' => 'required|numeric|min:1',
             'items.*.price' => 'required|numeric|min:0',
+            'items.*.unit_price' => 'nullable|numeric|min:0',
+            'items.*.is_total_price' => 'nullable',
         ]);
 
         try {
@@ -59,10 +61,15 @@ class PurchaseController extends Controller
 
             $totalAmount = 0;
             foreach ($validated['items'] as $item) {
-                $totalAmount += $item['quantity'] * $item['price'];
+                $qty = max(0.0001, (float) $item['quantity']);
+                $price = (float) $item['price'];
+                $isTotalPrice = !empty($item['is_total_price']);
+                $lineSubtotal = $isTotalPrice ? $price : ($qty * $price);
+                $totalAmount += $lineSubtotal;
             }
 
             $purchase = Purchase::create([
+                'hotel_id' => active_hotel_id() ?: 1,
                 'supplier_id' => $validated['supplier_id'],
                 'user_id' => Auth::id(),
                 'purchase_date' => $validated['purchase_date'],
@@ -73,41 +80,60 @@ class PurchaseController extends Controller
             ]);
 
             foreach ($validated['items'] as $itemData) {
+                $qty = max(0.0001, (float) $itemData['quantity']);
+                $price = (float) $itemData['price'];
+                $isTotalPrice = !empty($itemData['is_total_price']);
+
+                if ($isTotalPrice) {
+                    $lineSubtotal = $price;
+                    $unitPrice = isset($itemData['unit_price']) && is_numeric($itemData['unit_price']) && (float) $itemData['unit_price'] > 0
+                        ? (float) $itemData['unit_price']
+                        : ($lineSubtotal / $qty);
+                } else {
+                    $unitPrice = $price;
+                    $lineSubtotal = $qty * $unitPrice;
+                }
+
                 PurchaseItem::create([
                     'purchase_id' => $purchase->id,
                     'inventory_id' => $itemData['inventory_id'],
-                    'quantity' => $itemData['quantity'],
-                    'price' => $itemData['price'],
-                    'subtotal' => $itemData['quantity'] * $itemData['price'],
+                    'quantity' => $qty,
+                    'price' => $unitPrice,
+                    'subtotal' => $lineSubtotal,
                 ]);
 
                 if ($purchase->status == 'received') {
                     $inventory = Inventory::find($itemData['inventory_id']);
-                    $inventory->stock += $itemData['quantity'];
-                    $inventory->purchase_price = $itemData['price'];
-                    $inventory->save();
+                    if ($inventory) {
+                        $inventory->stock += $qty;
+                        $inventory->purchase_price = $unitPrice;
+                        $inventory->save();
 
-                    $warehouseStock = InventoryWarehouseStock::firstOrCreate(
-                        ['inventory_id' => $inventory->id, 'warehouse_id' => $purchase->warehouse_id],
-                        ['stock' => 0]
-                    );
-                    $warehouseStock->increment('stock', $itemData['quantity']);
+                        $warehouseStock = InventoryWarehouseStock::firstOrCreate(
+                            ['inventory_id' => $inventory->id, 'warehouse_id' => $purchase->warehouse_id],
+                            ['stock' => 0]
+                        );
+                        $warehouseStock->increment('stock', $qty);
 
-                    InventoryMutation::create([
-                        'inventory_id' => $inventory->id,
-                        'user_id' => Auth::id(),
-                        'type' => 'in',
-                        'quantity' => $itemData['quantity'],
-                        'notes' => 'From Purchase Order #' . $purchase->purchase_number . ' -> ' . ($purchase->warehouse->name ?? 'Gudang'),
-                        'reference_type' => Purchase::class,
-                        'reference_id' => $purchase->id,
-                    ]);
+                        InventoryMutation::create([
+                            'inventory_id' => $inventory->id,
+                            'user_id' => Auth::id(),
+                            'type' => 'in',
+                            'quantity' => $qty,
+                            'notes' => 'From Purchase Order #' . $purchase->purchase_number . ' -> ' . ($purchase->warehouse->name ?? 'Gudang'),
+                            'reference_type' => Purchase::class,
+                            'reference_id' => $purchase->id,
+                        ]);
+                    }
                 }
             }
 
             DB::commit();
 
-            return $this->ajaxOrRedirect('Purchase order created successfully.', route('purchases.index'), $purchase, 201);
+            return $this->ajaxOrRedirect('Purchase order created successfully.', route('purchases.index'), [
+                'purchase' => $purchase,
+                'redirect' => route('purchases.index'),
+            ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -280,17 +306,24 @@ class PurchaseController extends Controller
     public function searchInventory(Request $request)
     {
         $term = $request->input('term', '');
+        $hotelId = active_hotel_id() ?: 1;
 
-        $items = Inventory::where('hotel_id', active_hotel_id())
-            ->where('is_active', true)
-            ->where('name', 'like', "%{$term}%")
-            ->limit(20)
+        $items = Inventory::where('is_active', true)
+            ->where(function ($q) use ($hotelId) {
+                $q->where('hotel_id', $hotelId)->orWhereNull('hotel_id');
+            })
+            ->when($term, function ($q, $term) {
+                $q->where('name', 'like', "%{$term}%");
+            })
+            ->orderBy('name')
+            ->limit(30)
             ->get()
             ->map(function ($item) {
+                $price = (float) ($item->purchase_price > 0 ? $item->purchase_price : ($item->price_per_unit ?? 0));
                 return [
                     'id' => $item->id,
-                    'text' => $item->name . ' (' . $item->unit . ')',
-                    'price' => $item->price_per_unit,
+                    'text' => $item->name . ' (' . ($item->unit ?? 'Unit') . ')',
+                    'price' => $price,
                 ];
             });
 
