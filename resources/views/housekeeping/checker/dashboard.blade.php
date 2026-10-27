@@ -2,6 +2,38 @@
 @section('title')
     Checker Dashboard - Verifikasi Task
 @endsection
+@section('css')
+<style>
+    #roomTypePills .nav-link {
+        transition: all 0.2s ease-in-out;
+        color: #495057 !important;
+        background-color: #ffffff !important;
+        border: 1px solid #dcdfe4 !important;
+        cursor: pointer;
+    }
+    #roomTypePills .nav-link:hover {
+        background-color: #f3f6f9 !important;
+        color: #405189 !important;
+        border-color: #405189 !important;
+    }
+    #roomTypePills .nav-link.active {
+        background-color: #405189 !important;
+        color: #ffffff !important;
+        border-color: #405189 !important;
+        box-shadow: 0 4px 12px rgba(64, 81, 137, 0.35) !important;
+    }
+    #roomTypePills .nav-link.active i,
+    #roomTypePills .nav-link.active span {
+        color: #ffffff !important;
+    }
+    #roomTypePills .nav-link.active .badge {
+        background-color: #ffffff !important;
+        color: #405189 !important;
+        border: 1px solid #ffffff !important;
+        font-weight: 700 !important;
+    }
+</style>
+@endsection
 @section('content')
     @component('components.breadcrumb')
         @slot('li_1') Housekeeping @endslot
@@ -46,50 +78,146 @@
         </div>
     </div>
     @else
-    <div class="row">
-        @foreach($tasks as $task)
-        <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100 border-primary">
-                <div class="card-header bg-primary-subtle d-flex align-items-center">
-                    <h6 class="mb-0 flex-grow-1">🚪 Kamar {{ $task->room->room_number ?? '-' }}</h6>
-                    <span class="badge bg-primary">Menunggu</span>
-                </div>
-                <div class="card-body">
-                    <div class="mb-2">
-                        <small class="text-muted">Tipe:</small> {{ $task->room->roomType->name ?? '-' }}
-                    </div>
-                    <div class="mb-2">
-                        <small class="text-muted">OB:</small> {{ $task->assignedUser->name ?? '-' }}
-                    </div>
+    {{-- Nav Pills per Tipe Kamar --}}
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body p-3">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <span class="fs-12 text-uppercase fw-bold text-muted">
+                    <i class="ri-filter-3-line me-1 text-primary"></i> Kategori Tipe Kamar:
+                </span>
+                <span class="text-muted fs-12">
+                    Total: <strong class="text-dark">{{ $tasks->count() }} task</strong> terbagi dalam <strong class="text-dark">{{ $tasksGrouped->count() }} tipe kamar</strong>
+                </span>
+            </div>
+            <style>
+                #roomTypePills .nav-link {
+                    transition: all 0.2s ease-in-out;
+                    color: #495057 !important;
+                    background-color: #ffffff !important;
+                    border: 1px solid #dcdfe4 !important;
+                    cursor: pointer;
+                }
+                #roomTypePills .nav-link:hover {
+                    background-color: #f3f6f9 !important;
+                    color: #405189 !important;
+                    border-color: #405189 !important;
+                }
+                #roomTypePills .nav-link.active {
+                    background-color: #405189 !important;
+                    color: #ffffff !important;
+                    border-color: #405189 !important;
+                    box-shadow: 0 4px 12px rgba(64, 81, 137, 0.35) !important;
+                }
+                #roomTypePills .nav-link.active i,
+                #roomTypePills .nav-link.active span {
+                    color: #ffffff !important;
+                }
+                #roomTypePills .nav-link.active .badge {
+                    background-color: #ffffff !important;
+                    color: #405189 !important;
+                    border: 1px solid #ffffff !important;
+                    font-weight: 700 !important;
+                }
+            </style>
+            <ul class="nav nav-pills flex-wrap gap-2" id="roomTypePills" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active rounded-pill px-3 py-2 fw-medium d-flex align-items-center gap-2 border" 
+                            id="pills-all-tab" 
+                            data-bs-toggle="pill" 
+                            data-bs-target="#pills-all" 
+                            type="button" 
+                            role="tab" 
+                            aria-controls="pills-all" 
+                            aria-selected="true">
+                        <i class="ri-apps-2-line"></i>
+                        <span>Semua Tipe</span>
+                        <span class="badge bg-primary text-white rounded-pill">{{ $tasks->count() }}</span>
+                    </button>
+                </li>
+                @foreach($tasksGrouped as $roomTypeName => $typeTasks)
                     @php
-                        $submittedAt = $task->completed_at ?? $task->updated_at ?? $task->created_at;
-                        $isToday = $submittedAt ? $submittedAt->isToday() : true;
+                        $tabId = 'pills-type-' . \Illuminate\Support\Str::slug($roomTypeName);
                     @endphp
-                    <div class="mb-2 p-2 rounded {{ $isToday ? 'bg-light' : 'bg-danger-subtle' }}">
-                        <div class="d-flex align-items-center justify-content-between mb-1">
-                            <small class="fw-semibold {{ $isToday ? 'text-muted' : 'text-danger' }}">
-                                <i class="ri-time-line me-1"></i>Selesai Dibersihkan:
-                            </small>
-                            @if($submittedAt)
-                                <span class="badge {{ $isToday ? 'bg-primary-subtle text-primary' : 'bg-danger text-white' }} fs-11">
-                                    {{ $submittedAt->diffForHumans() }}
-                                </span>
-                            @endif
-                        </div>
-                        <div class="fs-12 fw-medium {{ $isToday ? 'text-dark' : 'text-danger' }}">
-                            {{ $submittedAt ? $submittedAt->translatedFormat('d M Y, H:i') : '-' }}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link rounded-pill px-3 py-2 fw-medium d-flex align-items-center gap-2 border" 
+                                id="{{ $tabId }}-tab" 
+                                data-bs-toggle="pill" 
+                                data-bs-target="#{{ $tabId }}" 
+                                type="button" 
+                                role="tab" 
+                                aria-controls="{{ $tabId }}" 
+                                aria-selected="false">
+                            <i class="ri-hotel-bed-line"></i>
+                            <span>{{ $roomTypeName }}</span>
+                            <span class="badge bg-secondary-subtle text-secondary rounded-pill border">{{ $typeTasks->count() }}</span>
+                        </button>
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    </div>
+
+    {{-- Tab Content --}}
+    <div class="tab-content" id="roomTypePillsContent">
+        {{-- Tab 1: Semua Tipe (Grouped by Room Type Section) --}}
+        <div class="tab-pane fade show active" id="pills-all" role="tabpanel" aria-labelledby="pills-all-tab">
+            @foreach($tasksGrouped as $roomTypeName => $typeTasks)
+            <div class="card mb-4 border shadow-sm">
+                <div class="card-header bg-light-subtle py-2 px-3 d-flex align-items-center justify-content-between border-bottom">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-primary-subtle text-primary p-2 rounded-circle fs-13">
+                            <i class="ri-hotel-bed-line"></i>
+                        </span>
+                        <div>
+                            <h5 class="card-title mb-0 fs-15 fw-bold text-dark">{{ $roomTypeName }}</h5>
+                            <small class="text-muted">Kategori Tipe Kamar</small>
                         </div>
                     </div>
-                    <div class="mb-3">
-                        <small class="text-muted">Checklist:</small>
-                        {{ $task->checklistItems->where('is_done', true)->count() }}/{{ $task->checklistItems->count() }} selesai
+                    <span class="badge bg-primary fs-12 px-3 py-2 rounded-pill">
+                        {{ $typeTasks->count() }} task menunggu
+                    </span>
+                </div>
+                <div class="card-body p-3">
+                    <div class="row">
+                        @foreach($typeTasks as $task)
+                            @include('housekeeping.checker.task-card', ['task' => $task])
+                        @endforeach
                     </div>
-                    <a href="{{ route('housekeeping.checker.tasks.show', $task) }}" class="btn btn-primary w-100">
-                        <i class="ri-search-eye-line me-1"></i> Review Task
-                    </a>
                 </div>
             </div>
+            @endforeach
         </div>
+
+        {{-- Individual Tabs per Room Type --}}
+        @foreach($tasksGrouped as $roomTypeName => $typeTasks)
+            @php
+                $tabId = 'pills-type-' . \Illuminate\Support\Str::slug($roomTypeName);
+            @endphp
+            <div class="tab-pane fade" id="{{ $tabId }}" role="tabpanel" aria-labelledby="{{ $tabId }}-tab">
+                <div class="card mb-4 border shadow-sm">
+                    <div class="card-header bg-light-subtle py-2 px-3 d-flex align-items-center justify-content-between border-bottom">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-primary-subtle text-primary p-2 rounded-circle fs-13">
+                                <i class="ri-hotel-bed-line"></i>
+                            </span>
+                            <div>
+                                <h5 class="card-title mb-0 fs-15 fw-bold text-dark">{{ $roomTypeName }}</h5>
+                                <small class="text-muted">Menampilkan khusus task untuk tipe kamar ini</small>
+                            </div>
+                        </div>
+                        <span class="badge bg-primary fs-12 px-3 py-2 rounded-pill">
+                            {{ $typeTasks->count() }} task menunggu
+                        </span>
+                    </div>
+                    <div class="card-body p-3">
+                        <div class="row">
+                            @foreach($typeTasks as $task)
+                                @include('housekeeping.checker.task-card', ['task' => $task])
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            </div>
         @endforeach
     </div>
     @endif

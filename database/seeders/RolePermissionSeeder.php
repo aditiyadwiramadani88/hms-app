@@ -53,7 +53,7 @@ class RolePermissionSeeder extends Seeder
         Role::firstOrCreate(['name' => 'Housekeeping', 'guard_name' => 'web'])->givePermissionTo(['manage housekeeping', 'manage maintenance', 'housekeeping.my-tasks', 'housekeeping.dashboard', 'leaves.request']);
         Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'web'])->givePermissionTo(['view reports', 'view analytics', 'manage reservations', 'manage procurement', 'manage leaves', 'leaves.request']);
         Role::firstOrCreate(['name' => 'Guest', 'guard_name' => 'web'])->givePermissionTo(['book rooms', 'view own bookings']);
-        Role::firstOrCreate(['name' => 'Purchasing', 'guard_name' => 'web'])->givePermissionTo(['manage procurement']);
+        Role::firstOrCreate(['name' => 'Purchasing', 'guard_name' => 'web'])->givePermissionTo(['manage procurement', 'leaves.request']);
         Role::firstOrCreate(['name' => 'Tenant', 'guard_name' => 'web']); // Tenant role for POS - no permissions needed as it uses middleware
 
         // Create default admin user

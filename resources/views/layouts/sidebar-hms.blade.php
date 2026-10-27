@@ -297,25 +297,38 @@
 
 
                 <!-- HR & PAYROLL -->
-                @can('manage leaves')
+                @canany(['manage leaves', 'leaves.request'])
                 <li class="menu-title mt-2"><span><i class="ri-team-line me-1"></i>HR & Payroll</span></li>
+                @can('manage leaves')
                 <li class="nav-item">
                     <a class="nav-link menu-link" href="#sidebarLeaves" data-bs-toggle="collapse" role="button" aria-expanded="false" aria-controls="sidebarLeaves">
-                        <i class="ri-team-line"></i> <span>Cuti</span>
+                        <i class="ri-calendar-event-line"></i> <span>Cuti</span>
                         <span class="menu-arrow"></span>
                     </a>
-                    <div class="collapse menu-dropdown" id="sidebarLeaves">
+                    <div class="collapse menu-dropdown {{ request()->routeIs('my-leaves.*', 'admin.leave-requests.*', 'admin.leave-types.*') ? 'show' : '' }}" id="sidebarLeaves">
                         <ul class="nav nav-sm flex-column">
+                            @can('leaves.request')
                             <li class="nav-item">
-                                <a href="{{ route('admin.leave-requests.index') }}" class="nav-link">Pengajuan Cuti</a>
+                                <a href="{{ route('my-leaves.index') }}" class="nav-link {{ request()->routeIs('my-leaves.*') ? 'active' : '' }}">Pengajuan Cuti Saya</a>
+                            </li>
+                            @endcan
+                            <li class="nav-item">
+                                <a href="{{ route('admin.leave-requests.index') }}" class="nav-link {{ request()->routeIs('admin.leave-requests.*') ? 'active' : '' }}">Kelola Pengajuan Cuti</a>
                             </li>
                             <li class="nav-item">
-                                <a href="{{ route('admin.leave-types.index') }}" class="nav-link">Jenis Cuti</a>
+                                <a href="{{ route('admin.leave-types.index') }}" class="nav-link {{ request()->routeIs('admin.leave-types.*') ? 'active' : '' }}">Jenis Cuti</a>
                             </li>
                         </ul>
                     </div>
                 </li>
+                @else
+                <li class="nav-item">
+                    <a class="nav-link menu-link {{ request()->routeIs('my-leaves.*') ? 'active' : '' }}" href="{{ route('my-leaves.index') }}">
+                        <i class="ri-calendar-event-line"></i> <span>Pengajuan Cuti</span>
+                    </a>
+                </li>
                 @endcan
+                @endcanany
 
                 <!-- MASTER DATA -->
                 @can('manage system')

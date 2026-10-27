@@ -24,6 +24,11 @@ class HousekeepingCheckerController extends Controller
 
         $tasks = $tasksQuery->latest()->get();
 
+        // Group tasks by Room Type name
+        $tasksGrouped = $tasks->groupBy(function ($task) {
+            return $task->room?->roomType?->name ?? 'Lainnya / Tanpa Tipe';
+        })->sortKeys();
+
         // History: tasks that have been verified (approved/rejected/revised)
         $historyQuery = CleaningTask::whereIn('status', [
                 CleaningTask::STATUS_SELESAI,
@@ -39,7 +44,7 @@ class HousekeepingCheckerController extends Controller
             ->limit(30)
             ->get();
 
-        return view('housekeeping.checker.dashboard', compact('tasks', 'history', 'date', 'showAll'));
+        return view('housekeeping.checker.dashboard', compact('tasks', 'tasksGrouped', 'history', 'date', 'showAll'));
     }
 
     public function show(CleaningTask $task)
